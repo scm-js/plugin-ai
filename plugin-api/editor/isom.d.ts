@@ -78,6 +78,15 @@ export declare const isDiamond: (d: Diamond) => boolean;
  * on pixel (64x, 32y) and spans 128x64. The result can be off the map; check bounds.
  */
 export declare function diamondAt(px: number, py: number): Diamond;
+/**
+ * The terrain the lattice says a tile belongs to — the value of the diamond under the
+ * tile's centre, as a CV5 terrain index. Null off the lattice or for a value the table
+ * does not have. Under a cliff or a shore the diamond's row is an edge set, not a terrain,
+ * so the answer is one of the two terrains it joins (the first its links name).
+ */
+export declare function isomTerrainAt(scn: Scenario & {
+    isom: Uint16Array;
+}, tileset: Tileset, tx: number, ty: number): number | null;
 /** The in-bounds diamonds a brush of `extent` centred on `d` covers, for the hover preview. */
 export declare function brushDiamonds(scn: {
     width: number;

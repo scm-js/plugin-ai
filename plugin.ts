@@ -52,8 +52,8 @@ export default function activate(api: PluginApi) {
   api.menu.add(menu, { label: "Write Briefing…", icon: "plugin", enabled: open, run: () => openBriefing(ctx) });
   api.menu.add(menu, { label: "Review Map…", icon: "plugin", enabled: open, run: () => openReview(ctx) });
   api.menu.add(menu, { label: "Rewrite Strings…", icon: "plugin", enabled: open, run: () => openStrings(ctx) });
-  api.menu.add(menu, { label: "Assistant", shortcut: "Ctrl+Shift+A", icon: "plugin", enabled: open, command: "assistant" });
-  api.menu.add(menu, { label: "Settings…", icon: "plugin", command: "settings" });
+  api.menu.add(menu, { label: "Assistant", shortcut: "Ctrl+Shift+A", icon: "plugin", enabled: open, separator: true, command: "assistant" });
+  api.menu.add(menu, { label: "Settings…", icon: "plugin", separator: true, command: "settings" });
 
   api.contextMenu.add("viewport", {
     label: "Redo this area with AI…",

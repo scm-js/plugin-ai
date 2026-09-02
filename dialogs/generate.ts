@@ -50,10 +50,10 @@ export function openGenerate(ctx: Ctx) {
     target: (info ? "open" : "new") as "new" | "open",
     plan: null as MapPlan | null,
     rendered: null as Rendered | null,
-    touchedSince: false,
+    /** The history as it stood right after the last render — while it still reads so, an undo takes exactly that render back. */
+    mark: null as { undo: string | null; undoDepth: number } | null,
     refine: "",
   };
-  const stopListening: (() => void)[] = [];
 
   api.ui.dialog({
     title: "Generate Map",
@@ -176,19 +176,17 @@ export function openGenerate(ctx: Ctx) {
 
       const apply = async () => {
         if (!state.plan || !api.document.isOpen()) return;
-        if (state.rendered) {
-          if (state.touchedSince && !(await api.ui.confirm("The map was edited since the last plan was applied. Apply the new plan on top of it?", { title: "Generate Map", confirmLabel: "Apply on top" }))) return;
-          if (!state.touchedSince) api.document.undo();
+        if (state.rendered && state.mark) {
+          const now = api.document.history();
+          const intact = now.undo === state.mark.undo && now.undoDepth === state.mark.undoDepth;
+          if (!intact && !(await api.ui.confirm("The map was edited since the last plan was applied. Apply the new plan on top of it?", { title: "Generate Map", confirmLabel: "Apply on top" }))) return;
+          if (intact) api.document.undo();
         }
-        for (const off of stopListening.splice(0)) off();
         const rendered = renderPlan(api, state.plan, { originX: 0, originY: 0, label: `AI: ${state.plan.name}`, clearArea: true });
         if (!rendered) return;
         state.rendered = rendered;
-        state.touchedSince = false;
-        for (const ev of ["terrain", "units", "doodads", "locations", "sprites"] as const) {
-          const d = api.events.on(ev, () => { state.touchedSince = true; });
-          stopListening.push(() => d.dispose());
-        }
+        const after = api.document.history();
+        state.mark = { undo: after.undo, undoDepth: after.undoDepth };
         if (state.plan.name || state.plan.description) {
           api.document.update("AI: name and description", (tx) => { tx.properties({ name: state.plan!.name, description: state.plan!.description }); });
         }
@@ -224,7 +222,7 @@ export function openGenerate(ctx: Ctx) {
       );
       afterwards.append(applyButton, h("span", { className: "ai-hint" }, "Renders the plan onto the map as one undo step, then names the map after it."));
       promptField.focus();
-      return () => { runner.dispose(); for (const off of stopListening.splice(0)) off(); };
+      return () => { runner.dispose(); };
     },
     buttons: [{ label: "Close" }],
   });

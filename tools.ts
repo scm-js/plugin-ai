@@ -154,7 +154,7 @@ export function tools(): Tool[] {
         if (!scn || x < 0 || y < 0 || x >= scn.width || y >= scn.height) return "Off the map.";
         const t = api.terrain.tileInfo(scn.tiles[y * scn.width + x]);
         const d = api.query.doodadAt(x, y);
-        return capResult({ x, y, terrain: api.names.tile(scn.tiles[y * scn.width + x]), kind: t?.kind, height: t?.height, buildable: t?.buildable, walkableMinitiles: t?.walkable, doodad: d >= 0 ? api.palette.doodadInfo(scn.doodads[d]?.doodadId ?? -1)?.name ?? d : null });
+        return capResult({ x, y, terrain: api.names.tile(scn.tiles[y * scn.width + x]), terrainId: api.terrain.terrainAt(x, y), kind: t?.kind, height: t?.height, buildable: t?.buildable, walkableMinitiles: t?.walkable, doodad: d >= 0 ? api.palette.doodadInfo(scn.doodads[d]?.doodadId ?? -1)?.name ?? d : null });
       },
     },
     {
@@ -164,7 +164,7 @@ export function tools(): Tool[] {
         const id = unitIdByName(api, str(input.unit));
         if (id === null) return `No unit is called "${str(input.unit)}".`;
         const v = api.query.placement(id, num(input.x) * TILE + TILE / 2, num(input.y) * TILE + TILE / 2);
-        return v.problem ? `No: ${v.problem}${v.blocker >= 0 ? ` (blocked by unit ${v.blocker})` : ""}.` : "Yes.";
+        return v.problem ? `No: ${v.reason ?? v.problem}${v.blocker >= 0 ? ` (unit index ${v.blocker})` : ""}.` : "Yes.";
       },
     },
     {
@@ -224,7 +224,7 @@ export function tools(): Tool[] {
             if (id === null) { refused.push(`no unit called "${str(u.unit)}"`); continue; }
             const px = num(u.x) * TILE + TILE / 2, py = num(u.y) * TILE + TILE / 2;
             const owner = num(u.player, 12) >= 12 ? 11 : Math.max(0, num(u.player, 1) - 1);
-            if (!tx.canPlaceUnit(id, px, py)) { refused.push(`${str(u.unit)} at ${num(u.x)},${num(u.y)}: ${api.query.placement(id, px, py).problem ?? "refused"}`); continue; }
+            if (!tx.canPlaceUnit(id, px, py)) { refused.push(`${str(u.unit)} at ${num(u.x)},${num(u.y)}: ${api.query.placement(id, px, py).reason ?? "refused"}`); continue; }
             const index = tx.placeUnit(id, owner, px, py);
             if (u.amount !== undefined) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | 16 }));
             placed.push({ index, unit: api.names.unit(id), x: num(u.x), y: num(u.y) });

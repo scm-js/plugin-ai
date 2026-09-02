@@ -8,7 +8,7 @@
 import type { Rect } from "../plugin-api/plugins/api";
 import type { LayoutPlan, RegionPlanInput } from "../protocol";
 import { doodadCategoryNames, imageInput, terrainVocab, unitNames } from "../facts";
-import { sampleGrid, terrainOfGroup } from "../grid";
+import { sampleGrid } from "../grid";
 import { renderPlan, summarizeRender } from "../render";
 import { h, hex, ledgerLine, noteList, Runner, runRecipe, styled, textarea, type Ctx } from "../ui";
 
@@ -21,24 +21,13 @@ export function regionCellSize(rect: Rect): number {
   return Math.max(1, Math.ceil(longest / MAX_CELLS));
 }
 
-/** A tile's terrain id under the open map, or null for a cliff piece, a doodad tile or an unknown one. */
+/**
+ * A tile's terrain id under the open map: the editor's own answer — the flat group, or
+ * under a cliff, a shore or a doodad what the ISOM lattice says — null when neither tells.
+ */
 export function terrainAtTile(ctx: Ctx): (tx: number, ty: number) => number | null {
   const { api } = ctx;
-  const scn = api.document.scenario();
-  const terrains = api.terrain.types();
-  if (!scn) return () => null;
-  const cache = new Map<number, number | null>();
-  return (tx, ty) => {
-    if (tx < 0 || ty < 0 || tx >= scn.width || ty >= scn.height) return null;
-    const id = scn.tiles[ty * scn.width + tx];
-    let hit = cache.get(id);
-    if (hit === undefined) {
-      const info = api.terrain.tileInfo(id);
-      hit = info && info.kind === "terrain" ? terrainOfGroup(info.group, terrains) : null;
-      cache.set(id, hit);
-    }
-    return hit;
-  };
+  return (tx, ty) => api.terrain.terrainAt(tx, ty);
 }
 
 export async function openRegion(ctx: Ctx, preset?: Rect | null) {
