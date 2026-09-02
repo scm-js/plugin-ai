@@ -16,7 +16,7 @@
  * so this repository type-checks alone; the host erases the type-only imports.
  */
 import type { PluginApi } from "./plugin-api/plugins/api";
-import { openAssistant, type AssistantState } from "./assistant";
+import { openAssistant, type AssistantHandle, type AssistantState } from "./assistant";
 import { AiClient } from "./client";
 import { openBriefing, openDescribe } from "./dialogs/describe";
 import { openExplain } from "./dialogs/explain";
@@ -33,14 +33,16 @@ export default function activate(api: PluginApi) {
   const client = new AiClient(() => { const s = store.get(); return { serverUrl: s.serverUrl, token: s.token, ownKey: s.ownKey }; });
   const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, openSettings: () => openSettings(ctx, store) };
   const assistant: AssistantState = { messages: [] };
-  let assistantPanel: { close(): void; isOpen(): boolean } | null = null;
+  let assistantPanel: AssistantHandle | null = null;
   const open = () => api.document.isOpen();
+  const showAssistant = () => { if (!assistantPanel?.isOpen()) assistantPanel = openAssistant(ctx, assistant); return assistantPanel; };
 
   api.commands.register({ id: "generate", title: "AI: Generate Map", run: () => openGenerate(ctx) });
   api.commands.register({ id: "assistant", title: "AI: Assistant", run: () => {
     if (assistantPanel?.isOpen()) { assistantPanel.close(); assistantPanel = null; return; }
     assistantPanel = openAssistant(ctx, assistant);
   } });
+  api.commands.register({ id: "ask", title: "AI: Ask about this", run: (text?: unknown) => { showAssistant().ask(typeof text === "string" ? text : "", false); } });
   api.commands.register({ id: "settings", title: "AI: Settings", run: () => ctx.openSettings() });
 
   const menu = "Tools/AI" as const;
@@ -59,6 +61,17 @@ export default function activate(api: PluginApi) {
     label: "Redo this area with AI…",
     visible: (c) => c.markedArea !== null,
     run: (c) => void openRegion(ctx, c.markedArea),
+  });
+  api.contextMenu.add("viewport", {
+    label: (c) => (c.markedArea ? "Ask AI about this area…" : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "Ask AI about the selection…" : "Ask AI about this spot…"),
+    enabled: open,
+    run: (c) => {
+      const where = c.markedArea
+        ? `the marked area, tiles ${Math.min(c.markedArea.x0, c.markedArea.x1)},${Math.min(c.markedArea.y0, c.markedArea.y1)} to ${Math.max(c.markedArea.x0, c.markedArea.x1)},${Math.max(c.markedArea.y0, c.markedArea.y1)}`
+        : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "what I have selected"
+        : c.tile ? `the spot at tile ${c.tile.x},${c.tile.y}` : "here";
+      showAssistant().ask(`About ${where}: `, false);
+    },
   });
 
   api.hotkeys.add("Ctrl+Shift+A", { command: "assistant" });

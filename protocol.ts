@@ -202,6 +202,7 @@ export interface PlayerFact {
   /** `Human`, `Computer`, `Neutral`, … (the editor's own labels). */
   type: string;
   race: string;
+  /** 0-based force. */
   force: number;
   /** Whether the slot has a start location. */
   hasStart: boolean;
@@ -226,6 +227,12 @@ export interface MapFacts {
   briefingCount: number;
   /** The triggers as the editor prints them, cut to the server's input limit by the plugin. */
   triggersText?: string;
+  /** What the person has selected or marked right now, one line each (the assistant reads these). */
+  selection?: string[];
+  /** Where the person is looking: the visible tile rect, the zoom, the active layer, the cursor. */
+  view?: string;
+  /** The top of the undo and redo stacks. */
+  history?: string;
 }
 
 /* ── map-plan / region-plan ─────────────────────────────── */
@@ -513,6 +520,13 @@ export interface AgentInput {
   tools: AgentTool[];
   /** Facts about the open map, refreshed every turn. */
   facts: MapFacts;
+  /**
+   * The reference the plugin built for this map — the tileset's terrains, the unit table
+   * with sizes and costs, the trigger vocabulary, the text format, the editor's
+   * conventions. Stable from turn to turn (the server caches it as part of the prompt),
+   * so send the same text until the map or the tileset changes.
+   */
+  reference?: string;
 }
 
 export interface AgentOutput {

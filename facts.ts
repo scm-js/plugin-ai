@@ -21,7 +21,7 @@ export function players(api: PluginApi): PlayerFact[] {
       slot,
       type: api.names.playerType(scn.playerTypes[slot] ?? 0),
       race: api.names.race(scn.playerRaces[slot] ?? 0),
-      force: (scn.forces.playerForce[slot] ?? 0) + 1,
+      force: scn.forces.playerForce[slot] ?? 0,
       hasStart: starts.has(slot),
     });
   }
@@ -91,9 +91,45 @@ export function triggersText(api: PluginApi, budget = TRIGGER_TEXT_BUDGET): stri
   return `${out}\n\n… ${list.length - kept} more trigger${list.length - kept === 1 ? "" : "s"} not shown.`;
 }
 
-export function mapFacts(api: PluginApi, options: { triggers?: boolean } = {}): MapFacts {
+/** What the person has selected or marked, one line each, for the assistant's state block. */
+export function selectionLines(api: PluginApi): string[] {
+  const scn = api.document.scenario();
+  if (!scn) return [];
+  const out: string[] = [];
+  const area = api.selection.markedArea();
+  if (area) out.push(`marked area: tiles ${Math.min(area.x0, area.x1)},${Math.min(area.y0, area.y1)} to ${Math.max(area.x0, area.x1)},${Math.max(area.y0, area.y1)}`);
+  const units = api.selection.units();
+  if (units.length) {
+    const shown = units.slice(0, 12).map((i) => { const u = scn.units[i]; return u ? `#${i} ${api.names.unit(u.unitId)} (${u.owner < 8 ? `P${u.owner + 1}` : "neutral"}) at ${Math.floor(u.x / 32)},${Math.floor(u.y / 32)}` : `#${i}`; });
+    out.push(`${units.length} unit${units.length === 1 ? "" : "s"} selected: ${shown.join("; ")}${units.length > 12 ? "; …" : ""}`);
+  }
+  const locations = api.selection.locations();
+  if (locations.length) out.push(`${locations.length} location${locations.length === 1 ? "" : "s"} selected: ${locations.map((i) => `#${i} ${api.names.location(i)}`).join("; ")}`);
+  const sprites = api.selection.sprites();
+  if (sprites.length) out.push(`${sprites.length} sprite${sprites.length === 1 ? "" : "s"} selected: indices ${sprites.slice(0, 20).join(", ")}`);
+  const doodads = api.selection.doodads();
+  if (doodads.length) out.push(`${doodads.length} doodad${doodads.length === 1 ? "" : "s"} selected: ${doodads.slice(0, 12).map((i) => `#${i} ${api.palette.doodadInfo(scn.doodads[i]?.doodadId ?? -1)?.name ?? ""}`).join("; ")}`);
+  return out;
+}
+
+/** Where the person is looking. */
+export function viewLine(api: PluginApi): string {
+  const v = api.view.visible();
+  const c = api.view.cursorTile();
+  return `layer ${api.selection.layer()}; visible tiles ${Math.floor(v.x0)},${Math.floor(v.y0)} to ${Math.ceil(v.x1)},${Math.ceil(v.y1)} at zoom ${api.view.zoom().toFixed(2)}; cursor at ${c.x},${c.y}`;
+}
+
+export function historyLine(api: PluginApi): string {
+  const h = api.document.history();
+  return `${h.undoDepth} undo step${h.undoDepth === 1 ? "" : "s"}${h.undo ? ` (last: ${h.undo})` : ""}, ${h.redoDepth} redo`;
+}
+
+export function mapFacts(api: PluginApi, options: { triggers?: boolean; assistant?: boolean } = {}): MapFacts {
   const info = api.document.info();
   const scn = api.document.scenario();
+  if (options.assistant && scn) {
+    return { ...mapFacts(api, { triggers: options.triggers }), selection: selectionLines(api), view: viewLine(api), history: historyLine(api) };
+  }
   return {
     name: info?.name ?? "",
     description: info?.description ?? "",

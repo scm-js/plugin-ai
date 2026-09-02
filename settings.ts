@@ -21,9 +21,13 @@ export interface Settings {
   /** Empty for the recipe's default. */
   effort: Effort | "";
   showThinking: boolean;
+  /** Rounds of tool calls the assistant may make for one message before it stops and asks. */
+  maxRounds: number;
+  /** Send a picture of the visible area with every assistant message. */
+  attachView: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { serverUrl: "", token: "", ownKey: "", model: "", effort: "", showThinking: true };
+export const DEFAULT_SETTINGS: Settings = { serverUrl: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false };
 
 const KEY = "settings";
 
@@ -75,6 +79,8 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
         { value: "max", label: "Maximum — slow, thorough, dear" },
       ], { value: s.effort, onChange: (v) => { s.effort = v as Effort | ""; } });
       const thinkingBox = w.checkbox("Show the model's reasoning summary while it works", { value: s.showThinking, onChange: (v) => { s.showThinking = v; } });
+      const roundsField = w.number({ value: s.maxRounds, min: 1, max: 100, step: 1, onChange: (v) => { s.maxRounds = Math.max(1, Math.min(100, Math.round(v || 24))); } });
+      const attachBox = w.checkbox("Send a picture of the visible area with every message", { value: s.attachView, onChange: (v) => { s.attachView = v; } });
 
       const status = h("div", { className: "ai-hint" }, "Press Test to see what the server offers and what you have left.");
       const fillModels = (models: InfoResponse["models"]) => {
@@ -126,6 +132,11 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
           ]),
           thinkingBox,
           h("div", { className: "ai-hint" }, "Effort trades thoroughness for time and cost. The features that lay out maps and write triggers default to high; the rest to low or medium."),
+        ),
+        w.group("Assistant",
+          w.form([{ label: "Rounds per message", field: roundsField }]),
+          attachBox,
+          h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time."),
         ),
       );
 

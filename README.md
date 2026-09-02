@@ -33,8 +33,9 @@ rest to low or medium.
 ## What each item does
 
 All of them are under Tools ▸ AI. Every change to the map is one undo step with an
-"AI: …" label, except the ones that write the tables settings dialogs write (properties,
-strings, briefing), which say so and are not in the undo model, as in StarEdit.
+"AI: …" label, except the ones that write the tables the settings dialogs write
+(properties, strings, triggers, players, unit settings …), which say so and are not in
+the undo model, as in StarEdit.
 
 **Generate Map…** describes a map and gets a plan back: a coarse grid of terrain types,
 the bases with their mineral lines, ramps, decoration, a name and a description. The
@@ -81,12 +82,31 @@ before-and-after table with a tick per row. Apply writes the ticked rows back in
 never renumbering, so triggers keep pointing at the same strings.
 
 **Assistant** (Ctrl+Shift+A) is a panel beside the map. Say what you want to know or
-change; the model reads the map through tools — its facts, units, locations, triggers,
-Check Map, a screenshot of any area — and changes it through others: painting terrain,
-placing and moving units, locations, properties, triggers in the text format, the script,
-decoration, fog. Every tool call shows as a row in the transcript, screenshots inline,
-each change its own undo step. It stops after twelve rounds of tool calls in one message;
-say "continue" to go on.
+change; the model reads the map through tools and changes it through others. It can
+read everything: the map's facts and statistics, units (with every record field), doodads,
+sprites, locations, strings, switches, sounds, the triggers as text, the trigger script and
+its declarations, the settings of any unit type, upgrade or technology, the fog, a coarse
+terrain grid or one tile, Check Map, a screenshot of any area, and what you have selected.
+It can change nearly everything the editor can: paint terrain, place / move / remove /
+edit units, doodads and sprites, add / edit / remove locations, fog, the map's name and
+description, triggers (append, replace, remove, reorder, preserve), strings, switch names,
+the script (compile and build), player types / races / colours / forces, unit, upgrade and
+technology settings, the sound table, the map revision, and the map's size. Every tool
+call shows as a row in the transcript with its result on hover, screenshots inline; each
+edit is its own undo step, and a settings change is a transaction outside undo, as in
+StarEdit, marked so in the row. After a turn that changed the map the panel says what
+changed and offers to undo that turn's edits in one press.
+
+With every message the model gets the map's current state — the players, counts,
+locations, what you have selected or marked, where the view is, the top of the undo stack
+— and, once per map, a reference block: the tileset's terrains, the doodads, the unit
+table with sizes, costs and weapons, the trigger vocabulary with every argument's values,
+the text trigger format and the script language. The server caches it, so the second
+message costs little more than the words you typed. Right-click on the map and choose
+*Ask AI about this…* to start a message about the spot, the marked area or the selection;
+the chips above the input hold the usual questions. The picture tick sends a screenshot of
+the visible area with the message. It stops after the rounds of tool calls the Settings
+allow (24 by default) and offers to continue.
 
 ## Costs
 
@@ -103,12 +123,15 @@ Settings dialog's Test shows what you have left.
   ai-server; keep the two identical.
 - `client.ts` — the server client: recipes over server-sent events, errors, the ledger.
 - `settings.ts` — the persisted settings and the Settings dialog.
-- `facts.ts` — what the fact-based features tell the model about the map.
+- `facts.ts` — what the fact-based features tell the model about the map, and the
+  assistant's selection / view / history lines.
+- `reference.ts` — the per-map reference block the assistant's server caches.
 - `grid.ts`, `plan.ts` — the layout language: sampling the map into it and checking,
   mirroring and laying out a plan, all pure and tested.
 - `layout.ts` — the Melee Wizard's base and symmetry geometry, vendored.
 - `render.ts` — a plan onto the map as one transaction.
-- `tools.ts`, `assistant.ts` — the assistant's tools and its panel.
+- `tools.ts`, `tools/` — the assistant's tools by subject (reads, terrain, objects,
+  triggers, settings, script); `assistant.ts` — its panel.
 - `markdown.ts` — a small renderer for the model's prose.
 - `dialogs/` — one file per menu item.
 - `plugin-api/` — the editor's emitted type declarations, so this repository type-checks

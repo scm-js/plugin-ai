@@ -102,6 +102,9 @@ export const STYLE = `
 .ai .ai-tool code { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--text, #e6e9ef); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .ai .ai-tool img { max-width: 100%; border: 1px solid var(--border, #333); border-radius: 3px; margin-top: 3px; }
 .ai .ai-shot { padding: 0 8px 4px; }
+.ai .ai-context { font-size: 11px; color: var(--text-faint, #6b7382); line-height: 1.35; max-height: 44px; overflow: hidden; text-overflow: ellipsis; }
+.ai .ai-turn { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim, #99a2b3); padding: 3px 8px; border-top: 1px dashed var(--border, #333); }
+.ai .ai-turn .ai-grow { flex: 1; }
 .ai .ai-shot img { max-width: 100%; border: 1px solid var(--border, #333); border-radius: 3px; }
 `;
 
