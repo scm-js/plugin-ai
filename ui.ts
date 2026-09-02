@@ -83,7 +83,8 @@ export const STYLE = `
 .ai .ai-item .ai-dim { color: var(--text-dim, #99a2b3); font-size: 11px; }
 .ai .ai-item.is-picked { background: var(--bg-3, #232833); }
 .ai .ai-grid { font-family: ui-monospace, Menlo, Consolas, monospace; line-height: 1; overflow: auto; max-height: 40vh; padding: 4px; background: var(--bg-0, #0f1115); border: 1px solid var(--border, #333); border-radius: 4px; }
-.ai .ai-grid .ai-cell { display: inline-block; width: 9px; height: 9px; }
+.ai .ai-grid > div { display: flex; height: 9px; }
+.ai .ai-grid .ai-cell { flex: none; width: 9px; height: 9px; }
 .ai .ai-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--text-dim, #99a2b3); }
 .ai .ai-legend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 4px; border: 1px solid rgba(255,255,255,.15); }
 .ai .ai-btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
