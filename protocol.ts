@@ -19,6 +19,15 @@
  * Auth: `Authorization: Bearer <access token>` for a token the operator issued, and/or
  * `X-Anthropic-Key: <key>` to bring your own Anthropic key (the server forwards it and
  * never stores it). Which of the two the server accepts is in `/v1/info`.
+ *
+ * Accounts (optional, `InfoResponse.accounts` says whether the server has them): the
+ * bearer token may also be a *session* the server issued — `POST /v1/trial` hands one out
+ * to a browser that has not had one, with a small balance and no sign-in; `POST
+ * /v1/auth/start` begins a sign-in through an OAuth provider (the callback page posts the
+ * session to the opener), after which the account has a weekly allowance and can buy
+ * credit through `POST /v1/billing/checkout`. `GET /v1/account` is the balance and the
+ * ledger; `POST /v1/auth/logout` ends the session. Every call is charged to the balance
+ * at the server's price table, and `budget_exceeded` says when it is empty.
  */
 
 export const PROTOCOL_VERSION = 1;
@@ -154,6 +163,102 @@ export interface Allowance {
   requestsPerDay?: number;
   /** Dollars left today; absent when unlimited. */
   budgetUsd?: number;
+  /** Dollars left on the account (weekly allowance plus purchased credit); session callers only. */
+  balanceUsd?: number;
+}
+
+/* ── Accounts ───────────────────────────────────────────── */
+
+/** What the server's account system offers, when it has one. */
+export interface AccountsInfo {
+  /** Sign-in providers, in the order to show them. */
+  providers: { id: string; name: string }[];
+  /** A browser that has not had one can ask for a free trial session. */
+  trial: boolean;
+  /** Dollars a trial starts with. */
+  trialUsd: number;
+  /** The default tier's weekly allowance, for the sign-in pitch. */
+  weeklyUsd: number;
+  /** Credit packs on sale; empty when the server takes no payments. */
+  packs: CreditPack[];
+  /** The account page (sign in, ledger, top up, link providers, delete), for a new tab. */
+  accountUrl: string;
+}
+
+export interface CreditPack {
+  id: string;
+  /** What it costs. */
+  priceUsd: number;
+  /** What lands on the balance — the price less the payment fee, when sold at cost. */
+  creditUsd: number;
+}
+
+/** A session caller's account as the plugin shows it. */
+export interface AccountView {
+  /** A trial has no sign-in yet. */
+  kind: "trial" | "account";
+  /** The display name from the provider; absent for a trial. */
+  name?: string;
+  tier: string;
+  /** Weekly allowance left plus purchased credit. */
+  balanceUsd: number;
+  weeklyUsd: number;
+  creditUsd: number;
+  /** When the weekly allowance next fills, ISO 8601; absent for a trial. */
+  resetsAt?: string;
+  /** Provider ids linked to the account. */
+  providers: string[];
+}
+
+export interface LedgerEntry {
+  at: string;
+  kind: "trial" | "weekly" | "charge" | "purchase" | "adjust";
+  /** Signed dollars. */
+  usd: number;
+  note: string;
+}
+
+export interface TrialRequest {
+  /** A random id the browser made once and keeps; one trial per id. */
+  deviceId: string;
+}
+
+export interface TrialResponse {
+  session: string;
+  account: AccountView;
+}
+
+export interface AuthStartRequest {
+  provider: string;
+  /** The page origin the callback posts the session back to (`window.opener`). */
+  returnOrigin: string;
+}
+
+export interface AuthStartResponse {
+  /** Open this in a popup. */
+  url: string;
+}
+
+/** What the callback page posts to the opener. */
+export interface AuthMessage {
+  type: "scmjs-ai-auth";
+  session: string;
+  account: AccountView;
+}
+
+export interface AccountResponse {
+  account: AccountView;
+  /** Newest first. */
+  ledger: LedgerEntry[];
+}
+
+export interface CheckoutRequest {
+  pack: string;
+}
+
+export interface CheckoutResponse {
+  /** The payment page, for a new tab. */
+  url: string;
 }
 
 export interface InfoResponse {
@@ -171,11 +276,15 @@ export interface InfoResponse {
     /** `X-Anthropic-Key` is honoured. */
     byok: boolean;
   };
+  /** Present when the server runs accounts (trial sessions, sign-in, balances). */
+  accounts?: AccountsInfo;
   caller: {
-    kind: "anonymous" | "token" | "byok";
-    /** The token's label, when the operator gave it one. */
+    kind: "anonymous" | "token" | "byok" | "user";
+    /** The token's label, when the operator gave it one; a user's display name. */
     name?: string;
     remaining: Allowance;
+    /** For a `user` caller: the account behind the session. */
+    account?: AccountView;
   };
 }
 

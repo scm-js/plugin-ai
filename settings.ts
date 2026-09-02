@@ -1,19 +1,29 @@
 /**
  * The plugin's settings — where the server is, how the caller identifies itself, and
  * which model and effort to ask for — persisted through `api.storage`, plus the
- * Settings dialog with a Test button that calls `GET /v1/info` and says what came back.
- * The user's own Anthropic key is kept in the browser's storage like the rest; the
- * dialog says so next to the field.
+ * Settings dialog. Three ways in: a *scmjs.dev account* (the default: a free trial with
+ * no sign-in, then sign in with Discord for a weekly allowance, top up when needed), an
+ * *access token* from whoever runs a server, or *your own Anthropic key*. The session,
+ * the token and the key are all kept in the browser's storage like the rest; the dialog
+ * says so next to the fields.
  */
 import type { PluginApi } from "./plugin-api/plugins/api";
 import type { InfoResponse } from "./protocol";
-import { AiClient, describeError, formatUsd } from "./client";
-import { h, styled, type Ctx } from "./ui";
+import { AiClient, describeError, formatUsd, type AccessMode } from "./client";
+import { append, clear, h, styled, type Ctx } from "./ui";
 
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 
+/** The server the plugin talks to unless told otherwise. */
+export const DEFAULT_SERVER_URL = "https://api.scmjs.dev";
+
 export interface Settings {
   serverUrl: string;
+  access: AccessMode;
+  /** The session the server issued in account mode (a trial's or a signed-in account's). */
+  session: string;
+  /** A random id made once, for the one free trial a browser gets. */
+  deviceId: string;
   token: string;
   ownKey: string;
   /** Empty for the server's default. */
@@ -27,13 +37,26 @@ export interface Settings {
   attachView: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { serverUrl: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false };
+export const DEFAULT_SETTINGS: Settings = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false };
 
 const KEY = "settings";
 
+function newDeviceId(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID().replace(/-/g, "");
+  let s = "";
+  for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s;
+}
+
 export function loadSettings(api: PluginApi): Settings {
   const stored = api.storage.get<Partial<Settings>>(KEY, {});
-  return { ...DEFAULT_SETTINGS, ...stored };
+  const s: Settings = { ...DEFAULT_SETTINGS, ...stored };
+  // Settings from before there were accounts: keep the way they were connecting.
+  if (!stored.access) s.access = stored.token ? "token" : stored.ownKey ? "key" : "account";
+  if (!s.serverUrl.trim()) s.serverUrl = DEFAULT_SERVER_URL;
+  if (!s.deviceId) s.deviceId = newDeviceId();
+  return s;
 }
 
 export function saveSettings(api: PluginApi, s: Settings) {
@@ -47,6 +70,7 @@ export interface SettingsStore {
 
 export function settingsStore(api: PluginApi): SettingsStore {
   let current = loadSettings(api);
+  saveSettings(api, current);
   return {
     get: () => current,
     set: (patch) => { current = { ...current, ...patch }; saveSettings(api, current); },
@@ -56,7 +80,7 @@ export function settingsStore(api: PluginApi): SettingsStore {
 /* ── The dialog ─────────────────────────────────────────── */
 
 export function openSettings(ctx: Ctx, store: SettingsStore) {
-  const { api } = ctx;
+  const { api, account } = ctx;
   const w = api.ui.widgets;
   api.ui.dialog({
     title: "AI Settings",
@@ -65,8 +89,15 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
       const root = styled(body);
       const s = { ...store.get() };
       let info: InfoResponse | null = null;
+      /** The dialog's own client, over the values being edited, so Test and sign-in use them before they are saved. */
+      const client = new AiClient(() => ({ serverUrl: s.serverUrl, access: s.access, session: store.get().session, token: s.token, ownKey: s.ownKey }));
 
-      const serverField = w.text({ value: s.serverUrl, placeholder: "https://ai.example.org", onChange: (v) => { s.serverUrl = v.trim(); } });
+      const accessSelect = w.select([
+        { value: "account", label: "scmjs.dev account — free trial, then sign in" },
+        { value: "token", label: "Access token from a server's operator" },
+        { value: "key", label: "My own Anthropic key" },
+      ], { value: s.access, onChange: (v) => { s.access = v as AccessMode; store.set({ access: s.access }); showPane(); void connect(); } });
+      const serverField = w.text({ value: s.serverUrl, placeholder: DEFAULT_SERVER_URL, onChange: (v) => { s.serverUrl = v.trim() || DEFAULT_SERVER_URL; } });
       const tokenField = w.text({ value: s.token, password: true, placeholder: "given out by whoever runs the server", onChange: (v) => { s.token = v.trim(); } });
       const keyField = w.text({ value: s.ownKey, password: true, placeholder: "sk-ant-…", onChange: (v) => { s.ownKey = v.trim(); } });
       const modelSelect = w.select([{ value: "", label: "Server default" }], { value: s.model, onChange: (v) => { s.model = v; } });
@@ -82,7 +113,8 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
       const roundsField = w.number({ value: s.maxRounds, min: 1, max: 100, step: 1, onChange: (v) => { s.maxRounds = Math.max(1, Math.min(100, Math.round(v || 24))); } });
       const attachBox = w.checkbox("Send a picture of the visible area with every message", { value: s.attachView, onChange: (v) => { s.attachView = v; } });
 
-      const status = h("div", { className: "ai-hint" }, "Press Test to see what the server offers and what you have left.");
+      const status = h("div", { className: "ai-hint" }, "Connecting…");
+      const say = (text: string, cls = "ai-hint") => { status.textContent = text; status.className = cls; };
       const fillModels = (models: InfoResponse["models"]) => {
         const keep = modelSelect.value;
         while (modelSelect.options.length > 1) modelSelect.remove(1);
@@ -91,38 +123,98 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
       };
       if (s.model) { modelSelect.add(new Option(s.model, s.model)); modelSelect.value = s.model; }
 
-      const test = w.button("Test", {
-        onClick: async () => {
-          status.textContent = "Asking the server…";
-          status.className = "ai-hint";
-          const client = new AiClient(() => ({ serverUrl: s.serverUrl, token: s.token, ownKey: s.ownKey }));
-          try {
-            info = await client.info();
-            fillModels(info.models);
-            const r = info.caller.remaining;
-            const left: string[] = [];
-            if (r.budgetUsd !== undefined) left.push(`${formatUsd(r.budgetUsd)} left today`);
-            if (r.requestsPerDay !== undefined) left.push(`${r.requestsPerDay} requests left today`);
-            if (r.requestsPerMinute !== undefined) left.push(`${r.requestsPerMinute} this minute`);
-            const who = info.caller.kind === "token" ? `token${info.caller.name ? ` "${info.caller.name}"` : ""}` : info.caller.kind === "byok" ? "your own key" : "no credentials";
-            const on = info.recipes.filter((x) => x.enabled).length;
-            status.textContent = `${info.name} (v${info.version}) — using ${who}; ${on} of ${info.recipes.length} features on; ${left.length ? left.join(", ") : "no limits reported"}.${info.motd ? ` ${info.motd}` : ""}`;
-            status.className = "ai-hint ai-ok";
-          } catch (err) {
-            status.textContent = describeError(err);
-            status.className = "ai-hint ai-bad";
+      /* The account pane: what the server offers, what this browser has, and the buttons. */
+      const accountBox = h("div", { className: "ai-account" });
+      const renderAccount = () => {
+        clear(accountBox);
+        const offers = account.offers();
+        const view = account.current();
+        const signedIn = view?.kind === "account";
+        if (info && !offers) {
+          append(accountBox, [h("div", { className: "ai-hint ai-bad" }, "This server has no accounts. Use an access token or your own key.")]);
+          return;
+        }
+        const line = h("div", { className: "ai-hint" }, account.summary() ?? "");
+        const buttons: HTMLElement[] = [];
+        if (offers && !signedIn) {
+          for (const p of offers.providers) {
+            buttons.push(w.button(`Sign in with ${p.name}`, { primary: true, onClick: async () => {
+              say(`Waiting for ${p.name}…`);
+              try {
+                const v = await account.signIn(p.id);
+                say(`Signed in as ${v.name ?? "you"}. ${formatUsd(v.balanceUsd)} on the account.`, "ai-hint ai-ok");
+                void connect();
+              } catch (err) { say(describeError(err), "ai-hint ai-bad"); }
+            } }));
           }
-        },
-      });
+        }
+        if (signedIn) {
+          if (offers?.packs.length) {
+            const packSelect = w.select(offers.packs.map((p) => ({ value: p.id, label: `${formatUsd(p.priceUsd)} for ${formatUsd(p.creditUsd)} of credit` })), { value: offers.packs[0]!.id });
+            buttons.push(packSelect, w.button("Top up…", { onClick: async () => {
+              try { await account.topUp(packSelect.value); say("The payment page opened in a new tab. The credit lands once it is paid."); }
+              catch (err) { say(describeError(err), "ai-hint ai-bad"); }
+            } }));
+          }
+          buttons.push(w.button("Account page", { onClick: () => account.openAccountPage() }));
+          buttons.push(w.button("Sign out", { onClick: async () => { await account.signOut(); renderAccount(); say("Signed out."); } }));
+        } else if (offers && !view && !store.get().session) {
+          buttons.push(w.button("Start the free trial", { onClick: async () => {
+            try { await account.ensureSession(); renderAccount(); say(`Trial started: ${formatUsd(account.current()?.balanceUsd ?? 0)} to spend.`, "ai-hint ai-ok"); }
+            catch (err) { say(describeError(err), "ai-hint ai-bad"); }
+          } }));
+        }
+        append(accountBox, [
+          line,
+          h("div", { className: "ai-btns" }, ...buttons),
+          h("div", { className: "ai-hint" }, offers
+            ? `A free trial of ${formatUsd(offers.trialUsd)} needs no sign-in. Signing in${offers.providers.length ? ` with ${offers.providers.map((p) => p.name).join(" or ")}` : ""} gives ${formatUsd(offers.weeklyUsd)} a week, refilled every Monday${offers.packs.length ? ", and credit can be bought at cost when that runs out" : ""}. The server keeps your provider id, display name and a ledger of what your calls cost, nothing else; the account page can delete all of it.`
+            : "The server has not answered yet."),
+        ]);
+      };
+      const offAccount = account.onChange(renderAccount);
+
+      const panes = {
+        account: h("div", null, accountBox),
+        token: h("div", null, w.form([{ label: "Access token", field: tokenField }]), h("div", { className: "ai-hint" }, "What the server's operator handed out. Stored in this browser, sent only to the server above.")),
+        key: h("div", null, w.form([{ label: "Anthropic key", field: keyField }]), h("div", { className: "ai-hint" }, "Forwarded to Anthropic by the server and not kept there; stored in this browser under the editor's own keys.")),
+      };
+      const paneHost = h("div", null);
+      const showPane = () => { clear(paneHost); paneHost.append(panes[s.access]); };
+      showPane();
+
+      /** `GET /v1/info` with the values being edited: fills the models, the account offers and the status line. */
+      const connect = async () => {
+        say("Connecting…");
+        try {
+          info = await client.info();
+          fillModels(info.models);
+          account.setInfo(info.accounts, info.caller.account);
+          const r = info.caller.remaining;
+          const left: string[] = [];
+          if (r.balanceUsd !== undefined) left.push(`${formatUsd(r.balanceUsd)} on the account`);
+          else if (r.budgetUsd !== undefined) left.push(`${formatUsd(r.budgetUsd)} left today`);
+          if (r.requestsPerDay !== undefined) left.push(`${r.requestsPerDay} requests left today`);
+          const who = info.caller.kind === "user" ? (info.caller.account?.kind === "trial" ? "the free trial" : `the account of ${info.caller.name ?? "you"}`)
+            : info.caller.kind === "token" ? `token${info.caller.name ? ` "${info.caller.name}"` : ""}` : info.caller.kind === "byok" ? "your own key" : "no credentials";
+          const on = info.recipes.filter((x) => x.enabled).length;
+          say(`${info.name} (v${info.version}) — ${who}; ${on} of ${info.recipes.length} features on${left.length ? `; ${left.join(", ")}` : ""}.${info.motd ? ` ${info.motd}` : ""}`, "ai-hint ai-ok");
+          renderAccount();
+        } catch (err) {
+          say(describeError(err), "ai-hint ai-bad");
+          renderAccount();
+        }
+      };
+      const test = w.button("Test", { onClick: () => void connect() });
 
       root.append(
+        w.group("Access",
+          w.form([{ label: "Use", field: accessSelect }]),
+          paneHost,
+        ),
         w.group("Server",
-          w.form([
-            { label: "Address", field: serverField },
-            { label: "Access token", field: tokenField },
-            { label: "Own Anthropic key", field: keyField },
-          ]),
-          h("div", { className: "ai-hint" }, "One of the two is enough when the server accepts it. The token is what the server's operator handed out; a key of your own is forwarded to Anthropic and not kept by the server. Both are stored in this browser, under the editor's own storage, and go nowhere else."),
+          w.form([{ label: "Address", field: serverField }]),
+          h("div", { className: "ai-hint" }, `${DEFAULT_SERVER_URL} unless you run an ai-server of your own.`),
           h("div", { className: "ai-btns" }, test, status),
         ),
         w.group("Model",
@@ -139,9 +231,10 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
           h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time."),
         ),
       );
+      void connect();
 
-      // Save on close, whatever button.
-      return () => { store.set(s); };
+      // Save on close, whatever button; the session is the account manager's and is not overwritten from the copy.
+      return () => { offAccount(); const { session: _s, ...rest } = s; void _s; store.set(rest); };
     },
     buttons: [{ label: "Close", primary: true }],
   });

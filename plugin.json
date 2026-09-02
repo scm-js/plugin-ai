@@ -1,7 +1,7 @@
 {
   "name": "AI",
   "id": "ai",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Tools that use a language model through an ai-server: a map laid out from a prompt, an area redone, triggers written and explained, names, briefings, a review of the map, string rewrites, and an assistant that reads and edits everything in the map with you — terrain, units, doodads, sprites, locations, fog, triggers, strings, the script, and every settings dialog.",
   "author": "Jeany",
   "homepage": "https://github.com/scm-js/plugin-ai",

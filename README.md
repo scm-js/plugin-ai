@@ -6,10 +6,13 @@ a map out from a description, redoing one area, writing and explaining triggers,
 the map, writing a briefing, reviewing the map from a picture, rewriting strings, and an
 assistant that edits the map with you through the editor's own tools.
 
-It needs a server. The plugin holds no model key; it talks to an
+The plugin holds no model key; it talks to an
 [ai-server](https://github.com/scm-js/ai-server), which holds the key, the prompts, the
-access rules and the budgets. Nothing leaves the browser until you press the button in
-one of the dialogs, and every one of them says what it is about to send.
+access rules and the budgets. Out of the box that is `api.scmjs.dev`: the first feature
+you use starts a free trial with no sign-in, and when it is spent you sign in with Discord
+for an allowance that refills every week, with credit to buy at cost when a week is not
+enough. Nothing leaves the browser until you press the button in one of the dialogs, and
+every one of them says what it is about to send.
 
 ## Setting up
 
@@ -19,12 +22,17 @@ Install the plugin from Plugins ▸ Browse Plugins…, or paste
 https://github.com/scm-js/plugin-ai
 ```
 
-into Plugins ▸ Manage Plugins… and press Add. Then open Tools ▸ AI ▸ Settings… and enter
-the server's address and either an access token from whoever runs it or your own
-Anthropic key. Press Test: the reply says which features the server has on and what you
-have left to spend. Both the token and the key are kept in this browser's storage, under
-the editor's own keys, and go nowhere but the server you named. A key of your own is
-forwarded to Anthropic by the server and not kept there.
+into Plugins ▸ Manage Plugins… and press Add. That is all: the first feature you use
+starts the free trial. Tools ▸ AI ▸ Settings… shows what is left, has the *Sign in with
+Discord* button for the weekly allowance, a *Top up* for credit packs, and an *Account
+page* link for the ledger, linking another sign-in, and deleting the account (everything
+the server keeps about you goes with it: your Discord id, display name, and the ledger).
+
+The other two ways in are under *Use* in the same dialog: an **access token** from whoever
+runs an ai-server, or **your own Anthropic key**, which the server forwards and does not
+keep. Both, like the session, are kept in this browser's storage under the editor's own
+keys and go nowhere but the server whose address is set — `api.scmjs.dev` unless you run
+one of your own. Press Test to see which features the server has on and what you have left.
 
 The model and effort can be left to the server's defaults. Effort trades thoroughness for
 time and money; the features that lay out maps and write triggers default to high, the
@@ -111,12 +119,18 @@ allow (24 by default) and offers to continue.
 ## Costs
 
 Every dialog shows the model, how long it has been waiting, and once the answer is back
-what it cost and what the session has cost so far. Roughly, at the server's default
-model: a map plan is a few tens of cents, a trigger script and a review about the same, a
-name or a translation a few cents. The server's operator sets the allowances; the
-Settings dialog's Test shows what you have left.
+what it cost, what the session has cost so far, and what is left on the account. Roughly,
+at the server's default model: a map plan is a few tens of cents, a trigger script and a
+review about the same, a name or a translation a few cents. On `api.scmjs.dev` the trial
+and the weekly allowance are what the server says in Settings; credit bought on top is
+charged at the model's price, does not expire, and is spent after the week's allowance.
+When the balance is empty the dialog says so and links to Settings — sign in if you were
+on the trial, top up or wait for Monday if you were not.
 
 ## Files
+
+`account.ts` is the trial, the sign-in popup and the balance behind the default access
+mode; `settings.ts` the dialog that shows them.
 
 - `plugin.ts` — activation: the menu, the context-menu item, the hotkey, the commands.
 - `protocol.ts` — the wire contract shared with the server, copied verbatim from

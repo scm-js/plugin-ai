@@ -1,0 +1,165 @@
+/**
+ * The account behind the plugin's default access mode: a trial session the first time a
+ * feature is used (no sign-in, a small balance), then sign-in through one of the server's
+ * providers in a popup for a weekly allowance, and top-ups through the server's payment
+ * page. Everything here is a thin layer over `AiClient`'s account calls plus the settings
+ * that hold the session and the device id; the balance shown in the dialogs follows the
+ * `remaining` every result carries.
+ */
+import type { AccountView, AccountsInfo, Allowance } from "./protocol";
+import { AiClient, AiError, formatUsd } from "./client";
+import type { SettingsStore } from "./settings";
+
+export class AccountManager {
+  private readonly store: SettingsStore;
+  private readonly client: AiClient;
+  private view: AccountView | null = null;
+  private info: AccountsInfo | null = null;
+  private readonly listeners = new Set<() => void>();
+  private pending: Promise<void> | null = null;
+
+  constructor(store: SettingsStore, client: AiClient) {
+    this.store = store;
+    this.client = client;
+    client.prepare = () => this.ensureSession();
+    client.onRemaining = (r) => this.noteRemaining(r);
+  }
+
+  /** What the server said it offers, once `info()` or a sign-in fetched it. */
+  offers(): AccountsInfo | null { return this.info; }
+  current(): AccountView | null { return this.view; }
+  active(): boolean { return this.store.get().access === "account"; }
+  signedIn(): boolean { return this.active() && !!this.store.get().session && this.view?.kind === "account"; }
+
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+
+  private changed() { for (const l of this.listeners) l(); }
+
+  setInfo(info: AccountsInfo | undefined, view?: AccountView) {
+    this.info = info ?? null;
+    if (view) this.view = view;
+    this.changed();
+  }
+
+  private noteRemaining(r: Allowance) {
+    if (r.balanceUsd === undefined || !this.view) return;
+    const weekly = Math.max(0, Math.min(this.view.weeklyUsd, r.balanceUsd));
+    this.view = { ...this.view, balanceUsd: r.balanceUsd, weeklyUsd: weekly, creditUsd: Math.max(0, r.balanceUsd - weekly) };
+    this.changed();
+  }
+
+  /**
+   * Before a call in account mode with no session: start the trial. A browser that has
+   * had one is told to sign in — as a `budget_exceeded`, which is what the dialogs show
+   * with a link to Settings.
+   */
+  ensureSession(): Promise<void> {
+    if (!this.active() || this.store.get().session) return Promise.resolve();
+    if (!this.pending) {
+      this.pending = this.startTrial().finally(() => { this.pending = null; });
+    }
+    return this.pending;
+  }
+
+  private async startTrial(): Promise<void> {
+    const s = this.store.get();
+    try {
+      const r = await this.client.trial(s.deviceId);
+      this.store.set({ session: r.session });
+      this.view = r.account;
+      this.changed();
+    } catch (err) {
+      if (err instanceof AiError && (err.code === "forbidden" || err.code === "rate_limited")) {
+        throw new AiError("budget_exceeded", err.message);
+      }
+      throw err;
+    }
+  }
+
+  /** Re-read the account; a session the server no longer knows is dropped. */
+  async refresh(): Promise<AccountView | null> {
+    if (!this.active() || !this.store.get().session) { this.view = null; this.changed(); return null; }
+    try {
+      const r = await this.client.account();
+      this.view = r.account;
+    } catch (err) {
+      if (err instanceof AiError && err.code === "unauthorized") { this.store.set({ session: "" }); this.view = null; }
+      else throw err;
+    }
+    this.changed();
+    return this.view;
+  }
+
+  /**
+   * Sign in through a provider: the popup is opened at once (a click is what lets it
+   * open) and pointed at the provider once the server has said where; the callback page
+   * posts the session back and the popup closes itself. Rejects when the popup is closed
+   * first or nothing arrives in five minutes.
+   */
+  async signIn(provider: string): Promise<AccountView> {
+    const origin = new URL(this.client.base()).origin;
+    const popup = window.open("", "scmjs-ai-signin", "width=540,height=720,popup=yes");
+    if (!popup) throw new AiError("network", "the browser blocked the sign-in window; allow popups for this site and try again.");
+    let url: string;
+    try {
+      url = (await this.client.authStart(provider, window.location.origin)).url;
+    } catch (err) {
+      popup.close();
+      throw err;
+    }
+    popup.location.href = url;
+    return new Promise<AccountView>((resolve, reject) => {
+      let done = false;
+      const finish = (fn: () => void) => { if (done) return; done = true; window.removeEventListener("message", onMessage); window.clearInterval(watch); window.clearTimeout(limit); fn(); };
+      const onMessage = (e: MessageEvent) => {
+        if (e.origin !== origin) return;
+        const m = e.data as { type?: string; session?: string; account?: AccountView } | null;
+        if (!m || m.type !== "scmjs-ai-auth" || typeof m.session !== "string" || !m.account) return;
+        this.store.set({ session: m.session, access: "account" });
+        this.view = m.account;
+        this.changed();
+        finish(() => resolve(m.account!));
+      };
+      window.addEventListener("message", onMessage);
+      const watch = window.setInterval(() => { if (popup.closed) finish(() => reject(new AiError("aborted", "the sign-in window was closed."))); }, 500);
+      const limit = window.setTimeout(() => { finish(() => { try { popup.close(); } catch { /* gone */ } reject(new AiError("network", "the sign-in did not finish in time.")); }); }, 5 * 60_000);
+    });
+  }
+
+  async signOut(): Promise<void> {
+    if (this.store.get().session) { try { await this.client.logout(); } catch { /* the session is dropped locally regardless */ } }
+    this.store.set({ session: "" });
+    this.view = null;
+    this.changed();
+  }
+
+  /** The payment page for a pack, in a new tab. */
+  async topUp(pack: string): Promise<void> {
+    const { url } = await this.client.checkout(pack);
+    window.open(url, "_blank", "noopener");
+  }
+
+  openAccountPage(): void {
+    const url = this.info?.accountUrl ?? `${this.client.base()}/account`;
+    window.open(url, "_blank", "noopener");
+  }
+
+  /** One line for the dialogs: what is left and when it refills. */
+  summary(): string | null {
+    if (!this.active()) return null;
+    const v = this.view;
+    if (!v) return this.store.get().session ? "Account: balance unknown until the next call." : "First use starts a free trial.";
+    if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in for a weekly allowance.`;
+    const resets = v.resetsAt ? ` · refills ${shortDay(v.resetsAt)}` : "";
+    const credit = v.creditUsd > 0 ? ` (${formatUsd(v.creditUsd)} of it purchased credit)` : "";
+    return `${v.name ? `${v.name}: ` : ""}${formatUsd(v.balanceUsd)} left${credit}${resets}`;
+  }
+}
+
+function shortDay(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}

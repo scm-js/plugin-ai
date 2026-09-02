@@ -5,14 +5,20 @@
  * what the session has cost. The transport is `fetch`; nothing is sent until `run` or
  * `info` is called.
  */
-import type { ErrorBody, ErrorCode, InfoResponse, RecipeEvent, RecipeInputs, RecipeName, RecipeOptions, RecipeOutputs, RecipeRequest, RecipeResponse, Usage } from "./protocol";
+import type { AccountResponse, Allowance, AuthStartResponse, CheckoutResponse, ErrorBody, ErrorCode, InfoResponse, RecipeEvent, RecipeInputs, RecipeName, RecipeOptions, RecipeOutputs, RecipeRequest, RecipeResponse, TrialResponse, Usage } from "./protocol";
 import { PROTOCOL_VERSION } from "./protocol";
+
+/** How the caller identifies itself: a server-issued session (trial or signed-in account), an operator's token, or their own key. */
+export type AccessMode = "account" | "token" | "key";
 
 export interface Credentials {
   serverUrl: string;
-  /** An access token the server's operator issued. */
+  access: AccessMode;
+  /** The session the server issued (`account` mode). */
+  session: string;
+  /** An access token the server's operator issued (`token` mode). */
   token: string;
-  /** The user's own Anthropic key, forwarded and never stored by the server. */
+  /** The user's own Anthropic key, forwarded and never stored by the server (`key` mode). */
   ownKey: string;
 }
 
@@ -48,7 +54,7 @@ export function describeError(err: unknown): string {
   if (err instanceof AiError) {
     const retry = err.retryAfterSec ? ` Try again in ${err.retryAfterSec >= 90 ? `${Math.ceil(err.retryAfterSec / 60)} minutes` : `${err.retryAfterSec} seconds`}.` : "";
     switch (err.code) {
-      case "unauthorized": return `The server did not accept the credentials: ${err.message} Check the access token in AI Settings.`;
+      case "unauthorized": return `The server did not accept the credentials: ${err.message} See AI Settings.`;
       case "forbidden": return `The server refused: ${err.message}`;
       case "rate_limited": return `Too many requests for now.${retry}`;
       case "too_busy": return `The server is busy.${retry || " Try again in a moment."}`;
@@ -155,6 +161,10 @@ export function formatUsage(u: Usage): string {
 
 export class AiClient {
   readonly ledger = new Ledger();
+  /** Runs before every recipe call — the account manager uses it to obtain a trial session first. */
+  prepare: (() => Promise<void>) | null = null;
+  /** Hears the allowance that came back with a result. */
+  onRemaining: ((remaining: Allowance) => void) | null = null;
   private readonly credentials: () => Credentials;
   private readonly fetchImpl: typeof fetch;
   constructor(credentials: () => Credentials, fetchImpl: typeof fetch = (...args) => fetch(...args)) {
@@ -162,7 +172,7 @@ export class AiClient {
     this.fetchImpl = fetchImpl;
   }
 
-  private base(): string {
+  base(): string {
     const url = this.credentials().serverUrl.trim().replace(/\/+$/, "");
     if (!url) throw new AiError("network", "no server address is set.");
     return url;
@@ -171,9 +181,54 @@ export class AiClient {
   private headers(json: boolean): Record<string, string> {
     const c = this.credentials();
     const h: Record<string, string> = { Accept: json ? "application/json" : "text/event-stream" };
-    if (c.token.trim()) h.Authorization = `Bearer ${c.token.trim()}`;
-    if (c.ownKey.trim()) h["X-Anthropic-Key"] = c.ownKey.trim();
+    const bearer = c.access === "account" ? c.session : c.access === "token" ? c.token : "";
+    if (bearer.trim()) h.Authorization = `Bearer ${bearer.trim()}`;
+    if (c.access === "key" && c.ownKey.trim()) h["X-Anthropic-Key"] = c.ownKey.trim();
     return h;
+  }
+
+  /** One JSON POST under the base, with the credentials; errors as `AiError`. */
+  private async postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base()}${path}`, { method: "POST", headers: { ...this.headers(true), "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+    } catch (err) {
+      throw toNetworkError(err);
+    }
+    if (!res.ok) throw await errorOf(res);
+    return (await res.json()) as T;
+  }
+
+  /** `POST /v1/trial`: a session with the free trial on it, once per device id. */
+  trial(deviceId: string): Promise<TrialResponse> {
+    return this.postJson<TrialResponse>("/v1/trial", { deviceId });
+  }
+
+  /** `POST /v1/auth/start`: where to send the popup; the callback posts the session back to `returnOrigin`. */
+  authStart(provider: string, returnOrigin: string): Promise<AuthStartResponse> {
+    return this.postJson<AuthStartResponse>("/v1/auth/start", { provider, returnOrigin });
+  }
+
+  /** `POST /v1/auth/logout`: ends the session the credentials carry. */
+  logout(): Promise<unknown> {
+    return this.postJson("/v1/auth/logout", {});
+  }
+
+  /** `GET /v1/account`: the balance and the ledger behind the session. */
+  async account(signal?: AbortSignal): Promise<AccountResponse> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base()}/v1/account`, { headers: this.headers(true), signal });
+    } catch (err) {
+      throw toNetworkError(err);
+    }
+    if (!res.ok) throw await errorOf(res);
+    return (await res.json()) as AccountResponse;
+  }
+
+  /** `POST /v1/billing/checkout`: the payment page for a pack. */
+  checkout(pack: string): Promise<CheckoutResponse> {
+    return this.postJson<CheckoutResponse>("/v1/billing/checkout", { pack });
   }
 
   /** `GET /v1/info`: what the server offers and what the caller has left. */
@@ -192,6 +247,7 @@ export class AiClient {
 
   /** Run one recipe, streaming events to the hooks; resolves with the output and what it cost. */
   async run<N extends RecipeName>(name: N, input: RecipeInputs[N], hooks: RunHooks = {}, options?: RecipeOptions): Promise<RunResult<N>> {
+    if (this.prepare) await this.prepare();
     const body: RecipeRequest<N> = { protocol: PROTOCOL_VERSION, input, options };
     let res: Response;
     try {
@@ -210,6 +266,7 @@ export class AiClient {
       // A JSON answer (a server that does not stream): one result.
       const r = (await res.json()) as RecipeResponse<N>;
       this.ledger.add(r.usage);
+      if (r.remaining) this.onRemaining?.(r.remaining);
       return { output: r.output, usage: r.usage, remaining: r.remaining };
     }
     if (!res.body) throw new AiError("protocol", "the stream had no body.");
@@ -244,6 +301,7 @@ export class AiClient {
     if (!result) throw new AiError("protocol", "the stream ended without a result.");
     const r: RunResult<N> = result;
     this.ledger.add(r.usage);
+    if (r.remaining) this.onRemaining?.(r.remaining);
     return r;
   }
 }

@@ -58,7 +58,7 @@ function sseResponse(events: RecipeEvent[], chunk = 7): Response {
 }
 
 describe("AiClient", () => {
-  const creds = () => ({ serverUrl: "https://ai.example/", token: "tok", ownKey: "" });
+  const creds = () => ({ serverUrl: "https://ai.example/", access: "token" as const, session: "", token: "tok", ownKey: "" });
 
   it("streams a recipe, reporting deltas and thinking, and books the usage", async () => {
     const seen: { url: string; init: RequestInit }[] = [];
@@ -110,7 +110,7 @@ describe("AiClient", () => {
     const down = new AiClient(creds, async () => { throw new TypeError("Failed to fetch"); });
     await expect(down.run("describe", { facts: {} as never })).rejects.toMatchObject({ code: "network" });
 
-    const noUrl = new AiClient(() => ({ serverUrl: "", token: "", ownKey: "" }), async () => new Response("{}"));
+    const noUrl = new AiClient(() => ({ serverUrl: "", access: "account" as const, session: "", token: "", ownKey: "" }), async () => new Response("{}"));
     await expect(noUrl.info()).rejects.toMatchObject({ code: "network" });
 
     const plain401 = new AiClient(creds, async () => new Response("nope", { status: 401 }));
@@ -119,7 +119,7 @@ describe("AiClient", () => {
 
   it("checks the protocol version on /v1/info and sends the own key when set", async () => {
     let headers: Record<string, string> = {};
-    const client = new AiClient(() => ({ serverUrl: "https://x", token: "", ownKey: "sk-ant-1" }), async (_u, init) => { headers = init!.headers as Record<string, string>; return new Response(JSON.stringify({ protocol: 1, version: "0.1.0", name: "n", models: [], recipes: [], access: { anonymous: false, byok: true }, caller: { kind: "byok", remaining: {} } })); });
+    const client = new AiClient(() => ({ serverUrl: "https://x", access: "key" as const, session: "", token: "", ownKey: "sk-ant-1" }), async (_u, init) => { headers = init!.headers as Record<string, string>; return new Response(JSON.stringify({ protocol: 1, version: "0.1.0", name: "n", models: [], recipes: [], access: { anonymous: false, byok: true }, caller: { kind: "byok", remaining: {} } })); });
     const info = await client.info();
     expect(info.caller.kind).toBe("byok");
     expect(headers["X-Anthropic-Key"]).toBe("sk-ant-1");

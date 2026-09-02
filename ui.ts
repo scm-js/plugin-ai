@@ -6,6 +6,7 @@
  */
 import type { PluginApi } from "./plugin-api/plugins/api";
 import type { RecipeInputs, RecipeName, RecipeOptions, Usage } from "./protocol";
+import type { AccountManager } from "./account";
 import { AiClient, AiError, describeError, formatUsage, type Ledger, type RunHooks, type RunResult } from "./client";
 import type { Settings } from "./settings";
 
@@ -14,6 +15,7 @@ export interface Ctx {
   settings: () => Settings;
   client: AiClient;
   ledger: Ledger;
+  account: AccountManager;
   openSettings: () => void;
 }
 
@@ -211,8 +213,9 @@ export class Runner {
   fail(err: unknown) {
     this.settle();
     const text = describeError(err);
-    const settingsLink = err instanceof AiError && (err.code === "unauthorized" || err.code === "network" || err.code === "model_not_allowed")
-      ? h("a", { href: "#", onClick: (e: Event) => { e.preventDefault(); this.ctx.openSettings(); } }, "Open AI Settings")
+    const wantsSettings = err instanceof AiError && (err.code === "unauthorized" || err.code === "network" || err.code === "model_not_allowed" || (err.code === "budget_exceeded" && this.ctx.account.active()));
+    const settingsLink = wantsSettings
+      ? h("a", { href: "#", onClick: (e: Event) => { e.preventDefault(); this.ctx.openSettings(); } }, err instanceof AiError && err.code === "budget_exceeded" ? (this.ctx.account.signedIn() ? "Top up or wait" : "Sign in") : "Open AI Settings")
       : null;
     this.setLine(h("span", { className: "ai-grow ai-bad", title: text }, text), settingsLink);
   }
@@ -269,12 +272,14 @@ export function requireServer(ctx: Ctx): boolean {
   return false;
 }
 
-/** A line with the session's spend that follows the ledger. */
+/** A line with the session's spend that follows the ledger, and the account's balance when there is one. */
 export function ledgerLine(ctx: Ctx): HTMLElement {
-  const el = h("div", { className: "ai-hint" }, ctx.ledger.summary());
-  const off = ctx.ledger.onChange(() => { el.textContent = ctx.ledger.summary(); });
-  // The listener is cheap; a dialog that closes leaves a dangling text node update at worst.
-  (el as HTMLElement & { dispose?: () => void }).dispose = off;
+  const text = () => { const a = ctx.account.summary(); return a ? `${ctx.ledger.summary()} · ${a}` : ctx.ledger.summary(); };
+  const el = h("div", { className: "ai-hint" }, text());
+  const off = ctx.ledger.onChange(() => { el.textContent = text(); });
+  const offAccount = ctx.account.onChange(() => { el.textContent = text(); });
+  // The listeners are cheap; a dialog that closes leaves a dangling text node update at worst.
+  (el as HTMLElement & { dispose?: () => void }).dispose = () => { off(); offAccount(); };
   return el;
 }
 

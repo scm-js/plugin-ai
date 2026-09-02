@@ -7,7 +7,9 @@
  * an assistant that edits the map with you. The server holds the model's key and the
  * prompts; this plugin gathers what the model needs from the open map, applies what
  * comes back through the editor's own transactions, and never sends anything until
- * you press the button.
+ * you press the button. Out of the box it talks to api.scmjs.dev: a free trial with no
+ * sign-in, then a weekly allowance behind a Discord sign-in (`account.ts`); a token or
+ * your own Anthropic key are the other two ways in.
  *
  * `protocol.ts` is the wire contract shared with the server; `plan.ts` / `grid.ts`
  * turn the layout language into brush strokes; `render.ts` applies a plan as one undo
@@ -16,6 +18,7 @@
  * so this repository type-checks alone; the host erases the type-only imports.
  */
 import type { PluginApi } from "./plugin-api/plugins/api";
+import { AccountManager } from "./account";
 import { openAssistant, type AssistantHandle, type AssistantState } from "./assistant";
 import { AiClient } from "./client";
 import { openBriefing, openDescribe } from "./dialogs/describe";
@@ -30,8 +33,9 @@ import type { Ctx } from "./ui";
 
 export default function activate(api: PluginApi) {
   const store = settingsStore(api);
-  const client = new AiClient(() => { const s = store.get(); return { serverUrl: s.serverUrl, token: s.token, ownKey: s.ownKey }; });
-  const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, openSettings: () => openSettings(ctx, store) };
+  const client = new AiClient(() => { const s = store.get(); return { serverUrl: s.serverUrl, access: s.access, session: s.session, token: s.token, ownKey: s.ownKey }; });
+  const account = new AccountManager(store, client);
+  const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store) };
   const assistant: AssistantState = { messages: [] };
   let assistantPanel: AssistantHandle | null = null;
   const open = () => api.document.isOpen();
