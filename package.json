@@ -1,0 +1,17 @@
+{
+  "name": "scmjs-plugin-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI — a plugin for the scmJS StarCraft map editor.",
+  "author": "Jeany",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
