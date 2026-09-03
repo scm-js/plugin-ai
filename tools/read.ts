@@ -237,6 +237,7 @@ export function readTools(): Tool[] {
         const id = unitIdByName(api, str(input.unit));
         if (id === null) return `No unit is called "${str(input.unit)}".`;
         const v = api.query.placement(id, num(input.x) * TILE + TILE / 2, num(input.y) * TILE + TILE / 2);
+        if (!v) return "No map is open.";
         return v.problem ? `No: ${v.reason ?? v.problem}${v.blocker >= 0 ? ` (unit index ${v.blocker})` : ""}.` : "Yes.";
       },
     },

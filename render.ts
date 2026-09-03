@@ -189,7 +189,7 @@ function setResource(tx: EditTransaction, index: number, amount: number) {
 
 function describePlacement(api: PluginApi, unitId: number, px: number, py: number): string {
   const v = api.query.placement(unitId, px, py);
-  return v.reason ?? v.problem ?? "unknown reason";
+  return v?.reason ?? v?.problem ?? "unknown reason";
 }
 
 /** Remove the units, sprites and doodads inside an area (a region redo starts clean). */

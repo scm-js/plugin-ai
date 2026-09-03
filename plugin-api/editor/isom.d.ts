@@ -150,4 +150,23 @@ export declare function rebuildIsomFromTiles(scn: Scenario, tileset: Tileset): I
 export declare function tilesFromIsom(scn: Scenario & {
     isom: Uint16Array;
 }, tileset: Tileset, random?: () => number): IsomEdit;
+/**
+ * What `useIsomStatus` measured for the open map — whether it can be painted
+ * isometrically and how well its lattice describes its tiles. Check Map reads it.
+ */
+export type IsomStatus = {
+    kind: "no-map";
+} | {
+    kind: "loading";
+} | {
+    kind: "no-tileset";
+}
+/** The map has no ISOM section (or a truncated one): the brush has nothing to work on. */
+ | {
+    kind: "missing";
+} | {
+    kind: "ready";
+    check: IsomCheck;
+    stale: boolean;
+};
 export {};

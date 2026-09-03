@@ -19,7 +19,7 @@ export function objectTools(): Tool[] {
             if (id === null) { refused.push(`no unit called "${str(u.unit)}"`); continue; }
             const px = num(u.x) * TILE + TILE / 2, py = num(u.y) * TILE + TILE / 2;
             const owner = ownerOf(u.player, 0);
-            if (!tx.canPlaceUnit(id, px, py)) { refused.push(`${api.names.unit(id)} at ${num(u.x)},${num(u.y)}: ${api.query.placement(id, px, py).reason ?? "refused"}`); continue; }
+            if (!tx.canPlaceUnit(id, px, py)) { refused.push(`${api.names.unit(id)} at ${num(u.x)},${num(u.y)}: ${api.query.placement(id, px, py)?.reason ?? "refused"}`); continue; }
             const index = tx.placeUnit(id, owner, px, py);
             if (u.amount !== undefined) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | USED.resources }));
             placed.push({ index, unit: api.names.unit(id), x: num(u.x), y: num(u.y) });
