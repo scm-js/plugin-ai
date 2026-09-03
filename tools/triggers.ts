@@ -1,5 +1,6 @@
 /** Trigger, string and switch writes: settings-style transactions (not in the undo model). */
 import { bool, capResult, ints, num, obj, plural, str, type Tool } from "./common";
+import { NO_SCRIPT_PLUGIN, scriptBridge } from "../script";
 
 export function triggerTools(): Tool[] {
   return [
@@ -111,9 +112,9 @@ export function triggerTools(): Tool[] {
       },
     },
     {
-      def: { name: "simulate_triggers", description: "Run the map's triggers through the editor's trigger-cycle interpreter for some cycles (Deaths, Switches, Always and Never are modelled; other conditions count as false) and report the actions that fired and the switches set at the end. Reads only.", inputSchema: obj({ cycles: { type: "integer" }, player: { type: "integer" } }) },
+      def: { name: "simulate_triggers", description: "Run the map's triggers through the Trigger Script plugin's trigger-cycle interpreter for some cycles (Deaths, Switches, Always and Never are modelled; other conditions count as false) and report the actions that fired and the switches set at the end. Reads only.", inputSchema: obj({ cycles: { type: "integer" }, player: { type: "integer" } }) },
       writes: false,
-      run: (input, { api }) => { const s = api.script.simulate(api.triggers.list(), Math.max(1, Math.min(200, Math.round(num(input.cycles, 30)))), input.player !== undefined ? { player: Math.round(num(input.player)) - 1 } : undefined); return capResult({ cycles: s.cycles, events: s.events.slice(0, 200), switchesSet: s.switches }); },
+      run: (input, { api }) => { const script = scriptBridge(api); if (!script) return NO_SCRIPT_PLUGIN; const s = script.simulate(api.triggers.list(), Math.max(1, Math.min(200, Math.round(num(input.cycles, 30)))), input.player !== undefined ? { player: Math.round(num(input.player)) - 1 } : undefined); return capResult({ cycles: s.cycles, events: s.events.slice(0, 200), switchesSet: s.switches }); },
     },
   ];
 }

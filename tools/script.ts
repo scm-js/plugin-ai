@@ -1,23 +1,26 @@
 /** The trigger script, the view, the history and the selection. */
 import { capResult, ints, num, obj, rectOf, str, TILE, type Tool } from "./common";
+import { NO_SCRIPT_PLUGIN, scriptBridge } from "../script";
 
 export function scriptTools(): Tool[] {
   return [
     {
       def: { name: "script_state", description: "The map's trigger script: whether there is one, its source, whether the built block is intact.", inputSchema: obj({}) },
       writes: false,
-      run: (_i, { api }) => { const s = api.script.state(); return s ? capResult({ hasScript: !!s.source, stale: s.stale, unbuilt: s.unbuilt, block: s.block, source: s.source }, 60_000) : "No map is open."; },
+      run: (_i, { api }) => { const script = scriptBridge(api); if (!script) return NO_SCRIPT_PLUGIN; const s = script.state(); return s ? capResult({ hasScript: !!s.source, stale: s.stale, unbuilt: s.unbuilt, block: s.block, source: s.source }, 60_000) : "No map is open."; },
     },
     {
       def: { name: "script_declarations", description: "The script language's declarations for this map (a .d.ts): every unit, location, switch, player and every condition and action function. Long; read once before writing a script.", inputSchema: obj({}) },
       writes: false,
-      run: (_i, { api }) => { const d = api.script.declarations(); return d.length > 60_000 ? `${d.slice(0, 60_000)}\n… cut.` : d; },
+      run: (_i, { api }) => { const script = scriptBridge(api); if (!script) return NO_SCRIPT_PLUGIN; const d = script.declarations(); return d.length > 60_000 ? `${d.slice(0, 60_000)}\n… cut.` : d; },
     },
     {
-      def: { name: "compile_script", description: "Type-check a trigger script (the editor's TypeScript-subset language; read script_declarations first) without building it. Returns diagnostics or the trigger count.", inputSchema: obj({ source: { type: "string" } }, ["source"]) },
+      def: { name: "compile_script", description: "Type-check a trigger script (the Trigger Script plugin's TypeScript-subset language; read script_declarations first) without building it. Returns diagnostics or the trigger count.", inputSchema: obj({ source: { type: "string" } }, ["source"]) },
       writes: false,
       run: async (input, { api }) => {
-        const r = await api.script.compile(str(input.source));
+        const script = scriptBridge(api);
+        if (!script) return NO_SCRIPT_PLUGIN;
+        const r = await script.compile(str(input.source));
         return r.ok ? `Compiles: ${r.triggers.length} triggers${r.program ? `, structured program of ${r.program.count}` : ""}.` : capResult({ errors: r.diagnostics.map((d) => `${d.line}:${d.column} ${d.message}`) });
       },
     },
@@ -26,7 +29,9 @@ export function scriptTools(): Tool[] {
       writes: true,
       settings: true,
       run: async (input, { api }) => {
-        const r = await api.script.build(str(input.source), { takeOver: input.takeOver === true });
+        const script = scriptBridge(api);
+        if (!script) return NO_SCRIPT_PLUGIN;
+        const r = await script.build(str(input.source), { takeOver: input.takeOver === true });
         return r.block ? `Built ${r.block.count} triggers at #${r.block.start + 1}.` : capResult({ errors: r.compiled.diagnostics.map((d) => `${d.line}:${d.column} ${d.message}`) });
       },
     },

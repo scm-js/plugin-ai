@@ -7,6 +7,7 @@
  * memoises per scenario object and `buildReference` is deterministic over its input.
  */
 import type { PluginApi, Scenario } from "./plugin-api/plugins/api";
+import { scriptBridge } from "./script";
 
 export interface ReferenceParts {
   mapName: string;
@@ -63,7 +64,7 @@ export function gatherReference(api: PluginApi): ReferenceParts {
     choices: ENUM_KINDS.map((kind) => ({ kind, labels: defs.choices(kind).map((c) => c.label) })),
     aiScripts: defs.choices("aiScript").map((c) => c.label),
     sprites: api.palette.spriteGroups().map((g) => ({ label: g.label, count: g.ids.length })),
-    hasScript: !!api.script.state()?.source,
+    hasScript: !!scriptBridge(api)?.state()?.source,
   };
 }
 

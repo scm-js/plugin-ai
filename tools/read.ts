@@ -1,5 +1,6 @@
 /** Reads: the map's facts, lists, lookups, the picture, and what the person is doing. */
 import { sampleGrid } from "../grid";
+import { scriptBridge } from "../script";
 import { imageInput } from "../facts";
 import { terrainAtTile } from "../dialogs/region";
 import { byName, capResult, hasRect, num, obj, ownerName, ownerOf, plural, rectOf, rectSchema, str, TILE, unitIdByName, type Tool } from "./common";
@@ -18,7 +19,7 @@ export function readTools(): Tool[] {
           revision: api.settings.version()?.label,
           players: api.settings.players().map((p) => ({ player: p.slot + 1, type: p.typeName, race: p.raceName, ...(p.colorHex ? { color: p.colorHex } : {}), ...(p.force !== null ? { force: p.force + 1, forceName: p.forceName } : {}), hasStart: starts.has(p.slot) })),
           forces: api.settings.forces().map((f) => ({ force: f.force + 1, name: f.name, players: f.players.map((s) => s + 1), allied: f.allied, alliedVictory: f.alliedVictory, sharedVision: f.sharedVision, randomStart: f.randomStart })),
-          script: api.script.state()?.source ? "the map has a trigger script" : "no trigger script",
+          script: scriptBridge(api)?.state()?.source ? "the map has a trigger script" : "no trigger script",
           history: api.document.history(),
         });
       },

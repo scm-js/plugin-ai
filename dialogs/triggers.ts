@@ -1,18 +1,20 @@
 /**
  * Tools ▸ AI ▸ Write Triggers…: a trigger script from a description. The model gets
  * the map's own `.d.ts` (every unit, location, switch and player by name) and writes
- * the editor's TypeScript-subset script; the dialog compiles it here, sends the
+ * the Trigger Script plugin's TypeScript-subset script; the dialog compiles it there, sends the
  * compiler's complaints back for up to two repair rounds, shows the script, and
  * Build installs it the way the Script Editor's Build does.
  */
 import type { TriggersInput } from "../protocol";
-import type { CompileResult } from "../plugin-api/script/compiler";
+import { NO_SCRIPT_PLUGIN, scriptBridge, type CompileResult } from "../script";
 import { h, ledgerLine, noteList, Runner, runRecipe, styled, textarea, type Ctx } from "../ui";
 
 const REPAIR_ROUNDS = 2;
 
 export function openTriggers(ctx: Ctx) {
   const { api } = ctx;
+  const bridge = scriptBridge(api);
+  if (!bridge) { void api.ui.alert(NO_SCRIPT_PLUGIN, { title: "Write Triggers" }); return; }
   const w = api.ui.widgets;
   const state = { prompt: "", script: "", summary: "", compiled: null as CompileResult | null };
 
@@ -23,7 +25,7 @@ export function openTriggers(ctx: Ctx) {
     mount(body) {
       const root = styled(body);
       const runner = new Runner(ctx);
-      const existing = api.script.state();
+      const existing = bridge.state();
       const hasScript = !!existing?.source;
       const promptField = textarea({ placeholder: "What should happen? (\"each player gets 10 marines at their start every 30 seconds until minute 5\", \"victory when a player has 50 kills\", \"a countdown that ends the game in a draw\")", rows: 4 });
       promptField.addEventListener("input", () => { state.prompt = promptField.value; });
@@ -35,7 +37,7 @@ export function openTriggers(ctx: Ctx) {
       const diagnostics = h("div", null);
       const buildButton = w.button("Build", { primary: true, onClick: () => void build() });
       const checkButton = w.button("Check", { onClick: () => void check() });
-      const openEditor = w.button("Open Script Editor", { ghost: true, onClick: () => api.ui.open("scriptEditor") });
+      const openEditor = w.button("Open Script Editor", { ghost: true, onClick: () => bridge.open() });
       const after = h("div", { className: "ai-btns", hidden: true }, buildButton, checkButton, openEditor);
 
       const showDiagnostics = (r: CompileResult) => {
@@ -46,7 +48,7 @@ export function openTriggers(ctx: Ctx) {
 
       const check = async (): Promise<CompileResult | null> => {
         try {
-          const r = await api.script.compile(state.script);
+          const r = await bridge.compile(state.script);
           state.compiled = r;
           showDiagnostics(r);
           return r;
@@ -58,7 +60,7 @@ export function openTriggers(ctx: Ctx) {
 
       const generate = async () => {
         if (!state.prompt.trim()) { promptField.focus(); runner.idle("Say what the triggers should do first."); return; }
-        const declarations = api.script.declarations();
+        const declarations = bridge.declarations();
         const hand = api.triggers.list().filter((_, i) => !(existing?.block && i >= existing.block.start && i < existing.block.start + existing.block.count));
         const input: TriggersInput = {
           prompt: state.prompt,
@@ -91,7 +93,7 @@ export function openTriggers(ctx: Ctx) {
 
       const build = async () => {
         if (!state.script.trim()) return;
-        const r = await api.script.build(state.script, { takeOver: takeOver.input.checked });
+        const r = await bridge.build(state.script, { takeOver: takeOver.input.checked });
         state.compiled = r.compiled;
         showDiagnostics(r.compiled);
         if (r.block) {

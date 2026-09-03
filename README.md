@@ -61,8 +61,9 @@ give them no direction of their own; check them against the cliffs.
 a drag on the map. The model sees the area and a margin round it as it is now, plus a
 picture, so the edges join.
 
-**Write Triggers…** turns a description into a trigger script in the editor's own
-language (see `docs/trigger-script.md` in the editor). The model is given this map's
+**Write Triggers…** turns a description into a trigger script in the language of the
+[Trigger Script](https://github.com/scm-js/plugin-trigger-script) plugin, which has to be
+switched on (it is in Plugins ▸ Manage Plugins… from the start). The model is given this map's
 declarations, so it can name every unit, location and switch as the map calls them. The
 script is compiled here; if it does not compile, the compiler's complaints go back for up
 to two repair rounds. Build installs it exactly as the Script Editor's Build does, and the
