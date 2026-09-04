@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["*.ts", "dialogs/*.ts", "plugin-api"]
+  "include": ["*.ts", "dialogs/*.ts"]
 }

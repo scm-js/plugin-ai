@@ -5,7 +5,7 @@
  * just that rectangle, which Apply renders in place — terrain and objects inside the
  * area replaced, one undo step.
  */
-import type { Rect } from "../plugin-api/plugins/api";
+import type { Rect } from "@scm-js/plugin-api";
 import type { LayoutPlan, RegionPlanInput } from "../protocol";
 import { doodadCategoryNames, imageInput, terrainVocab, unitNames } from "../facts";
 import { sampleGrid } from "../grid";

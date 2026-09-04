@@ -14,10 +14,10 @@
  * `protocol.ts` is the wire contract shared with the server; `plan.ts` / `grid.ts`
  * turn the layout language into brush strokes; `render.ts` applies a plan as one undo
  * step; `tools.ts` and `assistant.ts` are the tool-using conversation; the dialogs are
- * under `dialogs/`. `plugin-api/` is the editor's emitted type declarations, vendored
- * so this repository type-checks alone; the host erases the type-only imports.
+ * under `dialogs/`. `@scm-js/plugin-api` is the editor's type declarations, a devDependency
+ * generated from its own `src/plugins/api.ts`; the host erases the type-only import.
  */
-import type { PluginApi } from "./plugin-api/plugins/api";
+import type { PluginApi } from "@scm-js/plugin-api";
 import { AccountManager } from "./account";
 import { openAssistant, type AssistantHandle, type AssistantState } from "./assistant";
 import { AiClient } from "./client";

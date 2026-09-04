@@ -5,7 +5,7 @@
  * a byte budget. Also the vocabulary the layout recipes need: terrains, doodad
  * categories and unit names.
  */
-import type { PluginApi } from "./plugin-api/plugins/api";
+import type { PluginApi } from "@scm-js/plugin-api";
 import type { ImageInput, MapFacts, PlayerFact, TerrainVocab } from "./protocol";
 
 /** Bytes of printed triggers a request carries at most; the rest is summarised in one line. */

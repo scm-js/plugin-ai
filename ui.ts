@@ -4,7 +4,7 @@
  * progress bar with a live elapsed counter, the reasoning summary when asked for, a
  * Stop button while a request is out, and the cost once it is back.
  */
-import type { PluginApi } from "./plugin-api/plugins/api";
+import type { PluginApi } from "@scm-js/plugin-api";
 import type { RecipeInputs, RecipeName, RecipeOptions, Usage } from "./protocol";
 import type { AccountManager } from "./account";
 import { AiClient, AiError, describeError, formatUsage, type Ledger, type RunHooks, type RunResult } from "./client";

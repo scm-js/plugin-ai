@@ -149,5 +149,4 @@ mode; `settings.ts` the dialog that shows them.
   triggers, settings, script); `assistant.ts` — its panel.
 - `markdown.ts` — a small renderer for the model's prose.
 - `dialogs/` — one file per menu item.
-- `plugin-api/` — the editor's emitted type declarations, so this repository type-checks
-  alone (`npm run typecheck`); `npm test` runs the tests under `tests/`.
+- `dist/plugin.js` — the bundle the editor loads; `npm run build` writes it, CI commits it

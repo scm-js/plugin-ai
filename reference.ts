@@ -6,7 +6,7 @@
  * language in short. The server caches it as a system block, so `gatherReference`
  * memoises per scenario object and `buildReference` is deterministic over its input.
  */
-import type { PluginApi, Scenario } from "./plugin-api/plugins/api";
+import type { PluginApi, Scenario } from "@scm-js/plugin-api";
 import { scriptBridge } from "./script";
 
 export interface ReferenceParts {

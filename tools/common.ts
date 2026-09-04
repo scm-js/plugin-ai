@@ -4,7 +4,7 @@
  * technologies, doodads and sprites by the names the editor shows, case-insensitively,
  * with the resource aliases people actually use.
  */
-import type { PluginApi } from "../plugin-api/plugins/api";
+import type { PluginApi } from "@scm-js/plugin-api";
 import type { AgentContent, AgentTool, ImageInput } from "../protocol";
 import type { Ctx } from "../ui";
 

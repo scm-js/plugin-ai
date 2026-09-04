@@ -7,7 +7,7 @@
  * the token and the key are all kept in the browser's storage like the rest; the dialog
  * says so next to the fields.
  */
-import type { PluginApi } from "./plugin-api/plugins/api";
+import type { PluginApi } from "@scm-js/plugin-api";
 import type { InfoResponse } from "./protocol";
 import { AiClient, describeError, formatUsd, type AccessMode } from "./client";
 import { append, clear, h, styled, type Ctx } from "./ui";

@@ -7,7 +7,7 @@
  * finding, along with what Check Map says afterwards, so a refinement round can tell
  * the model what went wrong.
  */
-import type { EditResult, EditTransaction, PluginApi } from "./plugin-api/plugins/api";
+import type { EditResult, EditTransaction, PluginApi } from "@scm-js/plugin-api";
 import { unitIdByName } from "./facts";
 import { MINERAL_FIELDS, NEUTRAL, START_LOCATION, TILE, VESPENE_GEYSER, centreOf } from "./layout";
 import {

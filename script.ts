@@ -4,8 +4,8 @@
  * order and the user may have it switched off, so every use goes through `scriptBridge`
  * and says `NO_SCRIPT_PLUGIN` when it answers null.
  */
-import type { PluginApi } from "./plugin-api/plugins/api";
-import type { TriggerRecord } from "./plugin-api/formats/chk/sections/triggers";
+import type { PluginApi } from "@scm-js/plugin-api";
+import type { TriggerRecord } from "@scm-js/plugin-api";
 
 export const SCRIPT_PLUGIN = "trigger-script";
 export const NO_SCRIPT_PLUGIN = "The Trigger Script plugin is off. Turn it on under Plugins ▸ Manage Plugins… to write, compile or build trigger scripts.";

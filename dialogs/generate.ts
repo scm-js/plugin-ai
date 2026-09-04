@@ -6,7 +6,7 @@
  * size. Afterwards the same dialog refines: what to change, plus a picture of the
  * result and what the editor found wrong, go back to the model for a revised plan.
  */
-import type { TilesetId } from "../plugin-api/plugins/api";
+import type { TilesetId } from "@scm-js/plugin-api";
 import type { MapPlan, MapPlanInput, SymmetryMode } from "../protocol";
 import { SYMMETRY_MODES } from "../protocol";
 import { doodadCategoryNames, imageInput, pixelsPerTileFor, terrainVocab, unitNames } from "../facts";
