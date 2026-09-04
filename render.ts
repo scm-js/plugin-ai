@@ -9,7 +9,7 @@
  */
 import type { EditResult, EditTransaction, PluginApi } from "@scm-js/plugin-api";
 import { unitIdByName } from "./facts";
-import { MINERAL_FIELDS, NEUTRAL, START_LOCATION, TILE, VESPENE_GEYSER, centreOf } from "./layout";
+import { DEFAULT_GAS, DEFAULT_MINERALS, MINERAL_FIELDS, NEUTRAL, START_LOCATION, TILE, VESPENE_GEYSER, centreOf } from "./layout";
 import {
   baseFootprint, checkPlan, chooseRamp, enforceSymmetry, paintGroups, placeBases, scatterDoodads, unitRect, usableSymmetry,
   type DoodadChoice, type PlanContext,
@@ -17,10 +17,6 @@ import {
 import type { LayoutPlan, MapPlan, TerrainVocab } from "./protocol";
 import type { TileRect } from "./grid";
 
-/** UNIT `validStates` bit for "resources set". */
-const USED_RESOURCES = 16;
-const DEFAULT_MINERALS = 1500;
-const DEFAULT_GAS = 5000;
 
 export interface RenderOptions {
   /** Where the plan's cell (0, 0) lies. */
@@ -124,13 +120,13 @@ export function renderPlan(api: PluginApi, input: LayoutPlan | MapPlan, options:
         const rc = centreOf(r);
         const id = MINERAL_FIELDS[i % 3];
         if (!tx.canPlaceUnit(id, rc.x, rc.y)) { refusedHere++; return; }
-        setResource(tx, tx.placeUnit(id, NEUTRAL, rc.x, rc.y), DEFAULT_MINERALS);
+        setResource(api, tx, tx.placeUnit(id, NEUTRAL, rc.x, rc.y), DEFAULT_MINERALS);
         placed.resources++;
       });
       for (const r of b.layout.geysers) {
         const rc = centreOf(r);
         if (!tx.canPlaceUnit(VESPENE_GEYSER, rc.x, rc.y)) { refusedHere++; continue; }
-        setResource(tx, tx.placeUnit(VESPENE_GEYSER, NEUTRAL, rc.x, rc.y), DEFAULT_GAS);
+        setResource(api, tx, tx.placeUnit(VESPENE_GEYSER, NEUTRAL, rc.x, rc.y), DEFAULT_GAS);
         placed.resources++;
       }
       const short = b.layout.short.minerals + b.layout.short.geysers;
@@ -157,7 +153,7 @@ export function renderPlan(api: PluginApi, input: LayoutPlan | MapPlan, options:
       const owner = u.player >= 12 ? NEUTRAL : u.player - 1;
       if (!tx.canPlaceUnit(id, px, py)) { findings.push(`${u.unit} at ${u.x},${u.y} is refused there (${describePlacement(api, id, px, py)})`); continue; }
       const index = tx.placeUnit(id, owner, px, py);
-      if (u.amount !== undefined) setResource(tx, index, u.amount);
+      if (u.amount !== undefined) setResource(api, tx, index, u.amount);
       placed.units++;
       const w = size ? Math.max(1, Math.round(size.width / TILE)) : 1;
       const hgt = size ? Math.max(1, Math.round(size.height / TILE)) : 1;
@@ -182,9 +178,9 @@ export function renderPlan(api: PluginApi, input: LayoutPlan | MapPlan, options:
   return { result, findings, placed };
 }
 
-function setResource(tx: EditTransaction, index: number, amount: number) {
+function setResource(api: PluginApi, tx: EditTransaction, index: number, amount: number) {
   if (index < 0) return;
-  tx.updateUnits([index], (u) => ({ resourceAmount: amount, validStates: u.validStates | USED_RESOURCES }));
+  tx.updateUnits([index], (u) => ({ resourceAmount: amount, validStates: u.validStates | api.consts.unit.used.Resources }));
 }
 
 function describePlacement(api: PluginApi, unitId: number, px: number, py: number): string {

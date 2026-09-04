@@ -513,7 +513,7 @@ function locationNames(api) {
   if (!scn) return [];
   const out = [];
   scn.locations.forEach((l, i) => {
-    if (i === 63) return;
+    if (i === api.consts.location.anywhere) return;
     if (l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0) return;
     out.push(`${api.names.location(i)} (${Math.floor(Math.min(l.left, l.right) / 32)},${Math.floor(Math.min(l.top, l.bottom) / 32)}\u2013${Math.ceil(Math.max(l.left, l.right) / 32)},${Math.ceil(Math.max(l.top, l.bottom) / 32)})`);
   });
@@ -1129,8 +1129,21 @@ function summarizeResult(result) {
 var plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 // tools/objects.ts
-var UNIT_STATE = { cloaked: 1, burrowed: 2, inTransit: 4, hallucinated: 8, invincible: 16 };
-var USED = { owner: 1, hitPoints: 2, shields: 4, energy: 8, resources: 16, hangar: 32, state: 64 };
+var STATE_BITS = (c) => [
+  ["cloaked", c.unit.state.Cloaked, c.unit.valid.Cloak],
+  ["burrowed", c.unit.state.Burrowed, c.unit.valid.Burrow],
+  ["inTransit", c.unit.state.InTransit, c.unit.valid.InTransit],
+  ["hallucinated", c.unit.state.Hallucinated, c.unit.valid.Hallucinated],
+  ["invincible", c.unit.state.Invincible, c.unit.valid.Invincible]
+];
+var ELEVATION_BITS = (c) => [
+  ["excludeLowGround", c.location.elevation.LowGround],
+  ["excludeMediumGround", c.location.elevation.MediumGround],
+  ["excludeHighGround", c.location.elevation.HighGround],
+  ["excludeLowAir", c.location.elevation.LowAir],
+  ["excludeMediumAir", c.location.elevation.MediumAir],
+  ["excludeHighAir", c.location.elevation.HighAir]
+];
 function objectTools() {
   return [
     {
@@ -1154,7 +1167,7 @@ function objectTools() {
               continue;
             }
             const index = tx.placeUnit(id, owner, px, py);
-            if (u.amount !== void 0) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | USED.resources }));
+            if (u.amount !== void 0) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | api.consts.unit.used.Resources }));
             placed.push({ index, unit: api.names.unit(id), x: num(u.x), y: num(u.y) });
           }
         });
@@ -1191,6 +1204,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const indices = ints(input.indices);
+        const used0 = api.consts.unit.used;
         const pct = (v) => Math.max(0, Math.min(100, Math.round(num(v))));
         let n = 0;
         api.document.edit("AI: unit properties", (tx) => {
@@ -1201,34 +1215,34 @@ function objectTools() {
             let valid = rec.validProperties;
             if (input.owner !== void 0) {
               patch.owner = ownerOf(input.owner, rec.owner);
-              used |= USED.owner;
+              used |= used0.Owner;
             }
             if (input.hitPoints !== void 0) {
               patch.hitPointsPercent = pct(input.hitPoints);
-              used |= USED.hitPoints;
+              used |= used0.HitPoints;
             }
             if (input.shields !== void 0) {
               patch.shieldPercent = pct(input.shields);
-              used |= USED.shields;
+              used |= used0.Shields;
             }
             if (input.energy !== void 0) {
               patch.energyPercent = pct(input.energy);
-              used |= USED.energy;
+              used |= used0.Energy;
             }
             if (input.resources !== void 0) {
               patch.resourceAmount = Math.max(0, Math.round(num(input.resources)));
-              used |= USED.resources;
+              used |= used0.Resources;
             }
             if (input.hangar !== void 0) {
               patch.hangarUnits = Math.max(0, Math.round(num(input.hangar)));
-              used |= USED.hangar;
+              used |= used0.Hangar;
             }
-            for (const [key, bit] of Object.entries(UNIT_STATE)) {
+            for (const [key, stateBit, validBit] of STATE_BITS(api.consts)) {
               const v = bool(input[key]);
               if (v === void 0) continue;
-              flags = v ? flags | bit : flags & ~bit;
-              valid |= bit;
-              used |= USED.state;
+              flags = v ? flags | stateBit : flags & ~stateBit;
+              valid |= validBit;
+              used |= used0.State;
             }
             return { ...patch, validStates: used, stateFlags: flags, validProperties: valid };
           });
@@ -1337,14 +1351,14 @@ function objectTools() {
       run: (input, { api }) => {
         const index = Math.round(num(input.index, -1));
         const scn = api.document.scenario();
-        if (!scn || index < 0 || index >= scn.locations.length || index === 63) return "No such location (slot 63 is Anywhere).";
+        if (!scn || index < 0 || index >= scn.locations.length || index === api.consts.location.anywhere) return "No such location (slot 63 is Anywhere).";
         const patch = {};
         if (typeof input.name === "string") patch.name = input.name;
         if (input.x0 !== void 0 && input.x1 !== void 0) {
           const r = rectOf(input, api);
           Object.assign(patch, { left: r.x0 * TILE, top: r.y0 * TILE, right: r.x1 * TILE, bottom: r.y1 * TILE });
         }
-        const bits = [["excludeLowGround", 1], ["excludeMediumGround", 2], ["excludeHighGround", 4], ["excludeLowAir", 8], ["excludeMediumAir", 16], ["excludeHighAir", 32]];
+        const bits = ELEVATION_BITS(api.consts);
         if (bits.some(([k]) => input[k] !== void 0)) {
           let flags = scn.locations[index].elevationFlags;
           for (const [k, bit] of bits) {
@@ -1365,7 +1379,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const r = api.document.edit("AI: remove locations", (tx) => {
-          tx.removeLocations(ints(input.indices).filter((i) => i !== 63));
+          tx.removeLocations(ints(input.indices).filter((i) => i !== api.consts.location.anywhere));
         });
         return `Removed ${plural(r.locations, "location")}.`;
       }
@@ -1483,6 +1497,8 @@ var START_LOCATION = 214;
 var MINERAL_FIELDS = [176, 177, 178];
 var VESPENE_GEYSER = 188;
 var NEUTRAL = 11;
+var DEFAULT_MINERALS = 1500;
+var DEFAULT_GAS = 5e3;
 function overlaps(a, b) {
   return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
@@ -1975,9 +1991,6 @@ function unitRect(px, py, w, h2) {
 }
 
 // render.ts
-var USED_RESOURCES = 16;
-var DEFAULT_MINERALS = 1500;
-var DEFAULT_GAS = 5e3;
 function planRect(plan, originX, originY, width, height) {
   return {
     x0: Math.max(0, originX),
@@ -2058,7 +2071,7 @@ function renderPlan(api, input, options) {
           refusedHere++;
           return;
         }
-        setResource(tx, tx.placeUnit(id, NEUTRAL, rc.x, rc.y), DEFAULT_MINERALS);
+        setResource(api, tx, tx.placeUnit(id, NEUTRAL, rc.x, rc.y), DEFAULT_MINERALS);
         placed.resources++;
       });
       for (const r of b.layout.geysers) {
@@ -2067,7 +2080,7 @@ function renderPlan(api, input, options) {
           refusedHere++;
           continue;
         }
-        setResource(tx, tx.placeUnit(VESPENE_GEYSER, NEUTRAL, rc.x, rc.y), DEFAULT_GAS);
+        setResource(api, tx, tx.placeUnit(VESPENE_GEYSER, NEUTRAL, rc.x, rc.y), DEFAULT_GAS);
         placed.resources++;
       }
       const short = b.layout.short.minerals + b.layout.short.geysers;
@@ -2102,7 +2115,7 @@ function renderPlan(api, input, options) {
         continue;
       }
       const index = tx.placeUnit(id, owner, px, py);
-      if (u.amount !== void 0) setResource(tx, index, u.amount);
+      if (u.amount !== void 0) setResource(api, tx, index, u.amount);
       placed.units++;
       const w = size ? Math.max(1, Math.round(size.width / TILE2)) : 1;
       const hgt = size ? Math.max(1, Math.round(size.height / TILE2)) : 1;
@@ -2121,9 +2134,9 @@ function renderPlan(api, input, options) {
   for (const issue of api.query.validate()) if (issue.level !== "info") findings.push(`Check Map: ${issue.text}${issue.where ? ` (${issue.where})` : ""}`);
   return { result, findings, placed };
 }
-function setResource(tx, index, amount) {
+function setResource(api, tx, index, amount) {
   if (index < 0) return;
-  tx.updateUnits([index], (u) => ({ resourceAmount: amount, validStates: u.validStates | USED_RESOURCES }));
+  tx.updateUnits([index], (u) => ({ resourceAmount: amount, validStates: u.validStates | api.consts.unit.used.Resources }));
 }
 function describePlacement(api, unitId, px, py) {
   const v = api.query.placement(unitId, px, py);
@@ -2652,11 +2665,11 @@ function readTools() {
         const limit = Math.max(1, Math.min(2e3, num(input.limit, 300)));
         const out = [];
         scn.sprites.forEach((s, index) => {
-          const kind = (s.flags & 4096) !== 0 ? "pure" : "unit";
+          const kind = (s.flags & api.consts.sprite.flags.PureSprite) !== 0 ? "pure" : "unit";
           const tx = Math.floor(s.x / TILE), ty = Math.floor(s.y / TILE);
           if (rect && (tx < rect.x0 || ty < rect.y0 || tx >= rect.x1 || ty >= rect.y1)) return;
           if (out.length >= limit) return;
-          out.push({ index, kind, id: s.spriteId, name: api.palette.spriteName(kind, s.spriteId), owner: ownerName(s.owner), x: tx, y: ty, flipped: (s.flags & 16384) !== 0, disabled: (s.flags & 32768) !== 0 });
+          out.push({ index, kind, id: s.spriteId, name: api.palette.spriteName(kind, s.spriteId), owner: ownerName(s.owner), x: tx, y: ty, flipped: (s.flags & api.consts.sprite.flags.Flipped) !== 0, disabled: (s.flags & api.consts.sprite.flags.Disabled) !== 0 });
         });
         return capResult({ count: out.length, total: scn.sprites.length, sprites: out });
       }
@@ -2669,7 +2682,7 @@ function readTools() {
         if (!scn) return "No map is open.";
         const out = [];
         scn.locations.forEach((l, i) => {
-          if (i === 63 || l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0) return;
+          if (i === api.consts.location.anywhere || l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0) return;
           out.push({ index: i, name: api.names.location(i), x0: Math.floor(Math.min(l.left, l.right) / TILE), y0: Math.floor(Math.min(l.top, l.bottom) / TILE), x1: Math.ceil(Math.max(l.left, l.right) / TILE), y1: Math.ceil(Math.max(l.top, l.bottom) / TILE), ...l.elevationFlags ? { excludes: l.elevationFlags } : {} });
         });
         return capResult({ count: out.length, locations: out, note: "Slot 63 is Anywhere and cannot be edited." });

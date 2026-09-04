@@ -1,8 +1,29 @@
 /** Writes on objects: units, doodads, sprites, locations, fog. Each is one undo step. */
+import type { PluginApi } from "@scm-js/plugin-api";
 import { bool, capResult, doodadByName, ints, list, num, obj, ownerOf, plural, rectOf, rectSchema, spriteByName, str, TILE, unitIdByName, type Tool } from "./common";
 
-const UNIT_STATE = { cloaked: 1, burrowed: 2, inTransit: 4, hallucinated: 8, invincible: 16 } as const;
-const USED = { owner: 1, hitPoints: 2, shields: 4, energy: 8, resources: 16, hangar: 32, state: 64 } as const;
+/**
+ * The special-property tick each input key sets: the `stateFlags` bit and the
+ * `validProperties` bit that says the game should read it. They are the same numbers, but
+ * they are different fields, so the pair is spelled out rather than reused.
+ */
+const STATE_BITS = (c: PluginApi["consts"]) => [
+  ["cloaked", c.unit.state.Cloaked, c.unit.valid.Cloak],
+  ["burrowed", c.unit.state.Burrowed, c.unit.valid.Burrow],
+  ["inTransit", c.unit.state.InTransit, c.unit.valid.InTransit],
+  ["hallucinated", c.unit.state.Hallucinated, c.unit.valid.Hallucinated],
+  ["invincible", c.unit.state.Invincible, c.unit.valid.Invincible],
+] as const;
+
+/** The elevations a location can exclude, by input key. A *set* bit excludes that height. */
+const ELEVATION_BITS = (c: PluginApi["consts"]) => [
+  ["excludeLowGround", c.location.elevation.LowGround],
+  ["excludeMediumGround", c.location.elevation.MediumGround],
+  ["excludeHighGround", c.location.elevation.HighGround],
+  ["excludeLowAir", c.location.elevation.LowAir],
+  ["excludeMediumAir", c.location.elevation.MediumAir],
+  ["excludeHighAir", c.location.elevation.HighAir],
+] as const;
 
 export function objectTools(): Tool[] {
   return [
@@ -21,7 +42,7 @@ export function objectTools(): Tool[] {
             const owner = ownerOf(u.player, 0);
             if (!tx.canPlaceUnit(id, px, py)) { refused.push(`${api.names.unit(id)} at ${num(u.x)},${num(u.y)}: ${api.query.placement(id, px, py)?.reason ?? "refused"}`); continue; }
             const index = tx.placeUnit(id, owner, px, py);
-            if (u.amount !== undefined) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | USED.resources }));
+            if (u.amount !== undefined) tx.updateUnits([index], (rec) => ({ resourceAmount: num(u.amount), validStates: rec.validStates | api.consts.unit.used.Resources }));
             placed.push({ index, unit: api.names.unit(id), x: num(u.x), y: num(u.y) });
           }
         });
@@ -53,6 +74,7 @@ export function objectTools(): Tool[] {
       writes: true,
       run: (input, { api }) => {
         const indices = ints(input.indices);
+        const used0 = api.consts.unit.used;
         const pct = (v: unknown) => Math.max(0, Math.min(100, Math.round(num(v))));
         let n = 0;
         api.document.edit("AI: unit properties", (tx) => {
@@ -61,18 +83,18 @@ export function objectTools(): Tool[] {
             let used = rec.validStates;
             let flags = rec.stateFlags;
             let valid = rec.validProperties;
-            if (input.owner !== undefined) { patch.owner = ownerOf(input.owner, rec.owner); used |= USED.owner; }
-            if (input.hitPoints !== undefined) { patch.hitPointsPercent = pct(input.hitPoints); used |= USED.hitPoints; }
-            if (input.shields !== undefined) { patch.shieldPercent = pct(input.shields); used |= USED.shields; }
-            if (input.energy !== undefined) { patch.energyPercent = pct(input.energy); used |= USED.energy; }
-            if (input.resources !== undefined) { patch.resourceAmount = Math.max(0, Math.round(num(input.resources))); used |= USED.resources; }
-            if (input.hangar !== undefined) { patch.hangarUnits = Math.max(0, Math.round(num(input.hangar))); used |= USED.hangar; }
-            for (const [key, bit] of Object.entries(UNIT_STATE)) {
+            if (input.owner !== undefined) { patch.owner = ownerOf(input.owner, rec.owner); used |= used0.Owner; }
+            if (input.hitPoints !== undefined) { patch.hitPointsPercent = pct(input.hitPoints); used |= used0.HitPoints; }
+            if (input.shields !== undefined) { patch.shieldPercent = pct(input.shields); used |= used0.Shields; }
+            if (input.energy !== undefined) { patch.energyPercent = pct(input.energy); used |= used0.Energy; }
+            if (input.resources !== undefined) { patch.resourceAmount = Math.max(0, Math.round(num(input.resources))); used |= used0.Resources; }
+            if (input.hangar !== undefined) { patch.hangarUnits = Math.max(0, Math.round(num(input.hangar))); used |= used0.Hangar; }
+            for (const [key, stateBit, validBit] of STATE_BITS(api.consts)) {
               const v = bool(input[key]);
               if (v === undefined) continue;
-              flags = v ? flags | bit : flags & ~bit;
-              valid |= bit;
-              used |= USED.state;
+              flags = v ? flags | stateBit : flags & ~stateBit;
+              valid |= validBit;
+              used |= used0.State;
             }
             return { ...patch, validStates: used, stateFlags: flags, validProperties: valid };
           });
@@ -163,11 +185,11 @@ export function objectTools(): Tool[] {
       run: (input, { api }) => {
         const index = Math.round(num(input.index, -1));
         const scn = api.document.scenario();
-        if (!scn || index < 0 || index >= scn.locations.length || index === 63) return "No such location (slot 63 is Anywhere).";
+        if (!scn || index < 0 || index >= scn.locations.length || index === api.consts.location.anywhere) return "No such location (slot 63 is Anywhere).";
         const patch: Record<string, unknown> = {};
         if (typeof input.name === "string") patch.name = input.name;
         if (input.x0 !== undefined && input.x1 !== undefined) { const r = rectOf(input, api); Object.assign(patch, { left: r.x0 * TILE, top: r.y0 * TILE, right: r.x1 * TILE, bottom: r.y1 * TILE }); }
-        const bits: [string, number][] = [["excludeLowGround", 1], ["excludeMediumGround", 2], ["excludeHighGround", 4], ["excludeLowAir", 8], ["excludeMediumAir", 16], ["excludeHighAir", 32]];
+        const bits = ELEVATION_BITS(api.consts);
         if (bits.some(([k]) => input[k] !== undefined)) {
           let flags = scn.locations[index].elevationFlags;
           for (const [k, bit] of bits) { const v = bool(input[k]); if (v !== undefined) flags = v ? flags | bit : flags & ~bit; }
@@ -181,7 +203,7 @@ export function objectTools(): Tool[] {
     {
       def: { name: "remove_locations", description: "Remove locations by slot index. One undo step.", inputSchema: obj({ indices: { type: "array", items: { type: "integer" } } }, ["indices"]) },
       writes: true,
-      run: (input, { api }) => { const r = api.document.edit("AI: remove locations", (tx) => { tx.removeLocations(ints(input.indices).filter((i) => i !== 63)); }); return `Removed ${plural(r.locations, "location")}.`; },
+      run: (input, { api }) => { const r = api.document.edit("AI: remove locations", (tx) => { tx.removeLocations(ints(input.indices).filter((i) => i !== api.consts.location.anywhere)); }); return `Removed ${plural(r.locations, "location")}.`; },
     },
     {
       def: { name: "set_fog", description: "Fog of war over a tile rect for 1-based players: mode \"fog\" (starts unexplored) or \"clear\". One undo step.", inputSchema: obj({ ...rectSchema, players: { type: "array", items: { type: "integer" } }, mode: { type: "string", enum: ["fog", "clear"] } }, ["x0", "y0", "x1", "y1", "players", "mode"]) },

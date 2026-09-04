@@ -105,11 +105,11 @@ export function readTools(): Tool[] {
         const limit = Math.max(1, Math.min(2000, num(input.limit, 300)));
         const out: unknown[] = [];
         scn.sprites.forEach((s, index) => {
-          const kind = (s.flags & 0x1000) !== 0 ? "pure" : "unit";
+          const kind = (s.flags & api.consts.sprite.flags.PureSprite) !== 0 ? "pure" : "unit";
           const tx = Math.floor(s.x / TILE), ty = Math.floor(s.y / TILE);
           if (rect && (tx < rect.x0 || ty < rect.y0 || tx >= rect.x1 || ty >= rect.y1)) return;
           if (out.length >= limit) return;
-          out.push({ index, kind, id: s.spriteId, name: api.palette.spriteName(kind, s.spriteId), owner: ownerName(s.owner), x: tx, y: ty, flipped: (s.flags & 0x4000) !== 0, disabled: (s.flags & 0x8000) !== 0 });
+          out.push({ index, kind, id: s.spriteId, name: api.palette.spriteName(kind, s.spriteId), owner: ownerName(s.owner), x: tx, y: ty, flipped: (s.flags & api.consts.sprite.flags.Flipped) !== 0, disabled: (s.flags & api.consts.sprite.flags.Disabled) !== 0 });
         });
         return capResult({ count: out.length, total: scn.sprites.length, sprites: out });
       },
@@ -122,7 +122,7 @@ export function readTools(): Tool[] {
         if (!scn) return "No map is open.";
         const out: unknown[] = [];
         scn.locations.forEach((l, i) => {
-          if (i === 63 || (l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0)) return;
+          if (i === api.consts.location.anywhere || (l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0)) return;
           out.push({ index: i, name: api.names.location(i), x0: Math.floor(Math.min(l.left, l.right) / TILE), y0: Math.floor(Math.min(l.top, l.bottom) / TILE), x1: Math.ceil(Math.max(l.left, l.right) / TILE), y1: Math.ceil(Math.max(l.top, l.bottom) / TILE), ...(l.elevationFlags ? { excludes: l.elevationFlags } : {}) });
         });
         return capResult({ count: out.length, locations: out, note: "Slot 63 is Anywhere and cannot be edited." });

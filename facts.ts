@@ -66,7 +66,7 @@ export function locationNames(api: PluginApi): string[] {
   if (!scn) return [];
   const out: string[] = [];
   scn.locations.forEach((l, i) => {
-    if (i === 63) return;
+    if (i === api.consts.location.anywhere) return;
     if (l.left === 0 && l.top === 0 && l.right === 0 && l.bottom === 0) return;
     out.push(`${api.names.location(i)} (${Math.floor(Math.min(l.left, l.right) / 32)},${Math.floor(Math.min(l.top, l.bottom) / 32)}–${Math.ceil(Math.max(l.left, l.right) / 32)},${Math.ceil(Math.max(l.top, l.bottom) / 32)})`);
   });
