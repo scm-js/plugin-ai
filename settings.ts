@@ -92,7 +92,7 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
       const s = { ...store.get() };
       let info: InfoResponse | null = null;
       /** The dialog's own client, over the values being edited, so Test and sign-in use them before they are saved. */
-      const client = new AiClient(() => ({ serverUrl: s.serverUrl, access: s.access, session: store.get().session, token: s.token, ownKey: s.ownKey }));
+      const client = new AiClient(() => { const m = account.managedBy(); return { serverUrl: m?.serverUrl() ?? s.serverUrl, access: s.access, session: m?.session() ?? store.get().session, token: s.token, ownKey: s.ownKey }; });
 
       const accessSelect = w.select([
         { value: "account", label: "scmjs.dev account — free trial, then sign in" },
@@ -133,6 +133,27 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
         const offers = account.offers();
         const view = account.current();
         const signedIn = view?.kind === "account";
+        // The scmjs.dev plugin holds the sign-in: say so, and send every account question there.
+        const managed = account.managedBy();
+        accessSelect.disabled = !!managed;
+        serverField.disabled = !!managed;
+        if (managed) {
+          const state = managed.state();
+          append(accountBox, [
+            h("div", { className: "ai-hint ai-ok" }, "Signed in through the scmjs.dev plugin."),
+            h("div", { className: "ai-hint" }, account.summary() ?? ""),
+            h("div", { className: "ai-btns" },
+              ...(state.kind !== "account" && offers?.providers.length ? offers.providers.map((p) => w.button(`Sign in with ${p.name}`, { primary: true, onClick: async () => {
+                say(`Waiting for ${p.name}…`);
+                try { const v = await account.signIn(p.id); say(`Signed in as ${v.name ?? "you"}.`, "ai-hint ai-ok"); void connect(); }
+                catch (err) { say(describeError(err), "ai-hint ai-bad"); }
+              } })) : []),
+              w.button("Account…", { onClick: () => managed.openAccount() }),
+            ),
+            h("div", { className: "ai-hint" }, "The access mode and the server are the scmjs.dev plugin's while it provides the sign-in; its Account dialog has the balance, the top-up and the sign-out. Turn off \"Let other plugins use this sign-in\" there to set them here."),
+          ]);
+          return;
+        }
         if (info && !offers) {
           append(accountBox, [h("div", { className: "ai-hint ai-bad" }, "This server has no accounts. Use an access token or your own key.")]);
           return;

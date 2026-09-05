@@ -158,7 +158,11 @@ export type ErrorCode =
   /** The model declined; `message` carries its category when there is one. */
   | "refused"
   | "upstream"
-  | "internal";
+  | "internal"
+  /** No map or revision by that id on the account. */
+  | "not_found"
+  /** The upload would take the account past its storage cap. */
+  | "storage_full";
 
 export interface ErrorBody {
   error: {
@@ -197,6 +201,8 @@ export interface AccountsInfo {
   packs: CreditPack[];
   /** The account page (sign in, ledger, top up, link providers, delete), for a new tab. */
   accountUrl: string;
+  /** Map storage (`/v1/maps`) is on: a signed-in account can keep maps and their revisions here. */
+  maps: boolean;
 }
 
 export interface CreditPack {
@@ -225,6 +231,103 @@ export interface AccountView {
   resetsAt?: string;
   /** Provider ids linked to the account. */
   providers: string[];
+  /** Map storage used and allowed; absent when the server keeps no maps or for a trial. */
+  storage?: StorageView;
+}
+
+/* ── Map storage ────────────────────────────────────────── */
+
+export interface StorageView {
+  usedBytes: number;
+  capBytes: number;
+  maps: number;
+  revisions: number;
+}
+
+/**
+ * What the plugin knows about a map when it uploads a revision, so the list can show
+ * it without opening the file: all optional, none trusted for anything but display.
+ * `thumbnail` is a `data:image/png;base64,…` of the map at one pixel per tile.
+ */
+export interface MapMeta {
+  scenarioName?: string;
+  description?: string;
+  tileset?: string;
+  width?: number;
+  height?: number;
+  players?: number;
+  humanPlayers?: number;
+  units?: number;
+  triggers?: number;
+  thumbnail?: string;
+}
+
+export interface MapRevisionView {
+  id: string;
+  /** 1 for the first upload, counting up; never reused after a delete. */
+  number: number;
+  note: string;
+  fileName: string;
+  sizeBytes: number;
+  sha256: string;
+  meta: MapMeta;
+  createdAt: string;
+}
+
+export interface MapSummary {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  revisions: number;
+  /** The newest revision. */
+  head: MapRevisionView;
+}
+
+export interface MapDetail extends MapSummary {
+  /** Newest first. */
+  history: MapRevisionView[];
+}
+
+/** `GET /v1/maps` — newest change first. */
+export interface MapListResponse {
+  maps: MapSummary[];
+  storage: StorageView;
+}
+
+/** `POST /v1/maps`, `GET`/`PATCH /v1/maps/:id`, `POST /v1/maps/:id/revisions` and the revision routes. */
+export interface MapResponse {
+  map: MapDetail;
+  storage: StorageView;
+}
+
+/** `GET /v1/storage`. */
+export interface StorageResponse {
+  storage: StorageView;
+}
+
+/** The fields beside the file in a multipart upload (`POST /v1/maps`, `POST /v1/maps/:id/revisions`). */
+export interface MapUploadFields {
+  /** The map's name in the list; the scenario name or the file name when absent. Creating only. */
+  name?: string;
+  /** Creating only. */
+  description?: string;
+  /** This revision's note. */
+  note?: string;
+  /** `MapMeta` as JSON. */
+  meta?: string;
+}
+
+/** `PATCH /v1/maps/:id`. */
+export interface MapPatch {
+  name?: string;
+  description?: string;
+}
+
+/** `PATCH /v1/maps/:id/revisions/:number`. */
+export interface RevisionPatch {
+  note?: string;
 }
 
 export interface LedgerEntry {
@@ -293,6 +396,8 @@ export interface AdminRole {
   limits?: { requestsPerMinute?: number; requestsPerDay?: number; budgetUsdPerDay?: number; concurrent?: number };
   recipes?: RecipeName[];
   models?: string[];
+  /** Map storage cap for the role's accounts; the server's `maps.capMb` when absent. */
+  storageMb?: number;
 }
 
 export interface AdminUser {

@@ -72,4 +72,64 @@ describe("account manager", () => {
     expect(st.s.session).toBe("");
     expect(() => { throw new AiError("aborted", "x"); }).toThrow();
   });
+
+  it("follows the scmjs.dev plugin's service while it is there, and goes back to its own when it leaves", async () => {
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const st = store({ session: "own_session" });
+    let account: AccountManager;
+    const client = new AiClient(() => { const m = account.managedBy(); return { serverUrl: m?.serverUrl() ?? st.s.serverUrl, access: st.s.access, session: m?.session() ?? st.s.session, token: "", ownKey: "" }; }, async (u, init) => {
+      calls.push({ url: String(u), headers: init!.headers as Record<string, string> });
+      return json({ id: "1", recipe: "describe", output: { text: "x" }, usage: { model: "m", inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0.1, durationMs: 1 }, remaining: { balanceUsd: 0.9 } });
+    });
+    account = new AccountManager(st, client);
+    let listener: (() => void) | null = null;
+    const log: string[] = [];
+    const state = { kind: "account" as const, account: { kind: "account" as const, name: "Zerg", role: "free", balanceUsd: 1, weeklyUsd: 1, creditUsd: 0, providers: ["discord"] }, storage: null, offers: null };
+    const service = {
+      state: () => state,
+      onChange: (l: () => void) => { listener = l; return () => { listener = null; }; },
+      serverUrl: () => "https://other.example",
+      session: () => "shared_session",
+      headers: () => ({ Authorization: "Bearer shared_session" }),
+      ensureSession: async () => { log.push("ensure"); },
+      signIn: async () => { log.push("signIn"); return state.account; },
+      signOut: async () => { log.push("signOut"); },
+      refresh: async () => state.account,
+      openAccount: () => { log.push("open"); },
+      noteBalance: (usd: number) => { log.push(`balance ${usd}`); },
+    };
+    let changes = 0;
+    account.onChange(() => changes++);
+    account.setProvider(service);
+    expect(account.managed()).toBe(true);
+    expect(account.signedIn()).toBe(true);
+    expect(account.current()?.name).toBe("Zerg");
+    expect(account.summary()).toBe("Zerg: $1.00 left");
+    await client.run("explain-triggers", { text: "t" });
+    // The call went to the service's server with the service's session, and the balance went back to it.
+    expect(calls[0]!.url).toBe("https://other.example/v1/recipes/explain-triggers");
+    expect(calls[0]!.headers.Authorization).toBe("Bearer shared_session");
+    expect(log).toEqual(["ensure", "balance 0.9"]);
+    expect(st.s.session).toBe("own_session");
+    await account.signIn("discord");
+    account.openAccountPage();
+    await account.signOut();
+    expect(log.slice(2)).toEqual(["signIn", "open", "signOut"]);
+    // The service's changes reach this plugin's listeners.
+    const before = changes;
+    listener!();
+    expect(changes).toBe(before + 1);
+    // In token mode the service is not consulted.
+    st.set({ access: "token", token: "tok" });
+    expect(account.managed()).toBe(false);
+    expect(account.summary()).toBeNull();
+    st.set({ access: "account" });
+    // The plugin leaving: back to the plugin's own session.
+    account.setProvider(null);
+    expect(account.managed()).toBe(false);
+    expect(listener).toBeNull();
+    await client.run("explain-triggers", { text: "t" });
+    expect(calls[1]!.url).toBe("https://api.scmjs.dev/v1/recipes/explain-triggers");
+    expect(calls[1]!.headers.Authorization).toBe("Bearer own_session");
+  });
 });

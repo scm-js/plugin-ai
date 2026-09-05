@@ -28,6 +28,13 @@ Discord* button for the weekly allowance, a *Top up* for credit packs, and an *A
 page* link for the ledger, linking another sign-in, and deleting the account (everything
 the server keeps about you goes with it: your Discord id, display name, and the ledger).
 
+With the [scmjs.dev plugin](https://github.com/scm-js/plugin-scmjs-dev) installed, the
+sign-in is that plugin's: it holds its account out as the `scmjs-dev.account` service and
+this plugin follows it — the session, the server and the balance come from there, its
+Account menu and status-bar cell are where you sign in, and Settings here says so and
+locks the access mode while it lasts. Untick *Let other plugins use this sign-in* in that
+plugin's Account dialog, or turn it off, and this plugin signs in by itself again.
+
 The other two ways in are under *Use* in the same dialog: an **access token** from whoever
 runs an ai-server, or **your own Anthropic key**, which the server forwards and does not
 keep. Both, like the session, are kept in this browser's storage under the editor's own

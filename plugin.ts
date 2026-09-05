@@ -32,13 +32,21 @@ import { openScenario } from "./dialogs/scenario";
 import { openStrings } from "./dialogs/strings";
 import { openTriggers } from "./dialogs/triggers";
 import { installDialogSlots } from "./slots";
+import { SCMJS_ACCOUNT_SERVICE, type ScmjsAccountService } from "./scmjsdev";
 import { openSettings, settingsStore } from "./settings";
 import type { Ctx } from "./ui";
 
 export default function activate(api: PluginApi) {
   const store = settingsStore(api);
-  const client = new AiClient(() => { const s = store.get(); return { serverUrl: s.serverUrl, access: s.access, session: s.session, token: s.token, ownKey: s.ownKey }; });
-  const account = new AccountManager(store, client);
+  // In account mode the scmjs.dev plugin's sign-in, when that plugin holds it out, is the session and the server; otherwise this plugin's own.
+  let account: AccountManager;
+  const client = new AiClient(() => {
+    const s = store.get();
+    const m = account?.managedBy() ?? null;
+    return { serverUrl: m?.serverUrl() ?? s.serverUrl, access: s.access, session: m?.session() ?? s.session, token: s.token, ownKey: s.ownKey };
+  });
+  account = new AccountManager(store, client);
+  api.services.watch<ScmjsAccountService>(SCMJS_ACCOUNT_SERVICE, (service) => account.setProvider(service));
   const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store), presence: null };
   const assistant: AssistantState = { messages: [] };
   let assistantPanel: AssistantHandle | null = null;

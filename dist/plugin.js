@@ -284,6 +284,12 @@ async function errorOf(res) {
 }
 
 // account.ts
+function toAiError(err) {
+  if (err instanceof AiError) return err;
+  const e = err;
+  const code = e?.code ?? "network";
+  return new AiError(code, e?.message ?? String(err), { retryAfterSec: e?.retryAfterSec });
+}
 var AccountManager = class {
   store;
   client;
@@ -291,23 +297,49 @@ var AccountManager = class {
   info = null;
   listeners = /* @__PURE__ */ new Set();
   pending = null;
+  /** The scmjs.dev plugin's sign-in, while that plugin holds it out; then the session and the sign-in are its. */
+  provider = null;
+  offProvider = null;
   constructor(store, client) {
     this.store = store;
     this.client = client;
     client.prepare = () => this.ensureSession();
     client.onRemaining = (r) => this.noteRemaining(r);
   }
+  /**
+   * Follow (or stop following) the scmjs.dev plugin's service. While one is set and the
+   * access mode is `account`, everything about the session is asked of it: the session
+   * itself, the sign-in, the sign-out, the balance. `null` goes back to this plugin's own.
+   */
+  setProvider(provider) {
+    if (provider === this.provider) return;
+    this.offProvider?.();
+    this.offProvider = null;
+    this.provider = provider;
+    if (provider) this.offProvider = provider.onChange(() => this.changed());
+    this.changed();
+  }
+  /** The service this plugin follows, when the access mode is `account` and the scmjs.dev plugin is there. */
+  managedBy() {
+    return this.active() ? this.provider : null;
+  }
+  managed() {
+    return this.managedBy() !== null;
+  }
   /** What the server said it offers, once `info()` or a sign-in fetched it. */
   offers() {
-    return this.info;
+    return this.managedBy()?.state().offers ?? this.info;
   }
   current() {
-    return this.view;
+    const m = this.managedBy();
+    return m ? m.state().account : this.view;
   }
   active() {
     return this.store.get().access === "account";
   }
   signedIn() {
+    const m = this.managedBy();
+    if (m) return m.state().kind === "account";
     return this.active() && !!this.store.get().session && this.view?.kind === "account";
   }
   onChange(listener) {
@@ -325,7 +357,13 @@ var AccountManager = class {
     this.changed();
   }
   noteRemaining(r) {
-    if (r.balanceUsd === void 0 || !this.view) return;
+    if (r.balanceUsd === void 0) return;
+    const m = this.managedBy();
+    if (m) {
+      m.noteBalance(r.balanceUsd);
+      return;
+    }
+    if (!this.view) return;
     const weekly = Math.max(0, Math.min(this.view.weeklyUsd, r.balanceUsd));
     this.view = { ...this.view, balanceUsd: r.balanceUsd, weeklyUsd: weekly, creditUsd: Math.max(0, r.balanceUsd - weekly) };
     this.changed();
@@ -336,6 +374,10 @@ var AccountManager = class {
    * with a link to Settings.
    */
   ensureSession() {
+    const m = this.managedBy();
+    if (m) return m.ensureSession().catch((err) => {
+      throw toAiError(err);
+    });
     if (!this.active() || this.store.get().session) return Promise.resolve();
     if (!this.pending) {
       this.pending = this.startTrial().finally(() => {
@@ -360,6 +402,14 @@ var AccountManager = class {
   }
   /** Re-read the account; a session the server no longer knows is dropped. */
   async refresh() {
+    const m = this.managedBy();
+    if (m) {
+      try {
+        return await m.refresh();
+      } catch (err) {
+        throw toAiError(err);
+      }
+    }
     if (!this.active() || !this.store.get().session) {
       this.view = null;
       this.changed();
@@ -384,6 +434,14 @@ var AccountManager = class {
    * first or nothing arrives in five minutes.
    */
   async signIn(provider) {
+    const m = this.managedBy();
+    if (m) {
+      try {
+        return await m.signIn(provider);
+      } catch (err) {
+        throw toAiError(err);
+      }
+    }
     const origin = new URL(this.client.base()).origin;
     const popup = window.open("", "scmjs-ai-signin", "width=540,height=720,popup=yes");
     if (!popup) throw new AiError("network", "the browser blocked the sign-in window; allow popups for this site and try again.");
@@ -407,12 +465,12 @@ var AccountManager = class {
       };
       const onMessage = (e) => {
         if (e.origin !== origin) return;
-        const m = e.data;
-        if (!m || m.type !== "scmjs-ai-auth" || typeof m.session !== "string" || !m.account) return;
-        this.store.set({ session: m.session, access: "account" });
-        this.view = m.account;
+        const m2 = e.data;
+        if (!m2 || m2.type !== "scmjs-ai-auth" || typeof m2.session !== "string" || !m2.account) return;
+        this.store.set({ session: m2.session, access: "account" });
+        this.view = m2.account;
         this.changed();
-        finish(() => resolve(m.account));
+        finish(() => resolve(m2.account));
       };
       window.addEventListener("message", onMessage);
       const watch = window.setInterval(() => {
@@ -430,6 +488,11 @@ var AccountManager = class {
     });
   }
   async signOut() {
+    const m = this.managedBy();
+    if (m) {
+      await m.signOut();
+      return;
+    }
     if (this.store.get().session) {
       try {
         await this.client.logout();
@@ -446,13 +509,20 @@ var AccountManager = class {
     window.open(url, "_blank", "noopener");
   }
   openAccountPage() {
+    const m = this.managedBy();
+    if (m) {
+      m.openAccount();
+      return;
+    }
     const url = this.info?.accountUrl ?? `${this.client.base()}/account`;
     window.open(url, "_blank", "noopener");
   }
   /** One line for the dialogs: what is left and when it refills. */
   summary() {
     if (!this.active()) return null;
-    const v = this.view;
+    const m = this.managedBy();
+    const v = m ? m.state().account : this.view;
+    if (m && !v) return m.state().kind === "guest" ? "scmjs.dev: first use starts a free trial, or sign in from the Account menu." : "scmjs.dev: balance unknown until the next call.";
     if (!v) return this.store.get().session ? "Account: balance unknown until the next call." : "First use starts a free trial.";
     if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in for a weekly allowance.`;
     const resets = v.resetsAt ? ` \xB7 refills ${shortDay(v.resetsAt)}` : "";
@@ -6184,6 +6254,9 @@ function installDialogSlots(ctx, actions) {
   });
 }
 
+// scmjsdev.ts
+var SCMJS_ACCOUNT_SERVICE = "scmjs-dev.account";
+
 // settings.ts
 var DEFAULT_SERVER_URL = "https://api.scmjs.dev";
 var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: false };
@@ -6227,7 +6300,10 @@ function openSettings(ctx, store) {
       const root = styled(body);
       const s = { ...store.get() };
       let info = null;
-      const client = new AiClient(() => ({ serverUrl: s.serverUrl, access: s.access, session: store.get().session, token: s.token, ownKey: s.ownKey }));
+      const client = new AiClient(() => {
+        const m = account.managedBy();
+        return { serverUrl: m?.serverUrl() ?? s.serverUrl, access: s.access, session: m?.session() ?? store.get().session, token: s.token, ownKey: s.ownKey };
+      });
       const accessSelect = w.select([
         { value: "account", label: "scmjs.dev account \u2014 free trial, then sign in" },
         { value: "token", label: "Access token from a server's operator" },
@@ -6293,6 +6369,33 @@ function openSettings(ctx, store) {
         const offers = account.offers();
         const view = account.current();
         const signedIn = view?.kind === "account";
+        const managed = account.managedBy();
+        accessSelect.disabled = !!managed;
+        serverField.disabled = !!managed;
+        if (managed) {
+          const state = managed.state();
+          append(accountBox, [
+            h("div", { className: "ai-hint ai-ok" }, "Signed in through the scmjs.dev plugin."),
+            h("div", { className: "ai-hint" }, account.summary() ?? ""),
+            h(
+              "div",
+              { className: "ai-btns" },
+              ...state.kind !== "account" && offers?.providers.length ? offers.providers.map((p) => w.button(`Sign in with ${p.name}`, { primary: true, onClick: async () => {
+                say(`Waiting for ${p.name}\u2026`);
+                try {
+                  const v = await account.signIn(p.id);
+                  say(`Signed in as ${v.name ?? "you"}.`, "ai-hint ai-ok");
+                  void connect();
+                } catch (err) {
+                  say(describeError(err), "ai-hint ai-bad");
+                }
+              } })) : [],
+              w.button("Account\u2026", { onClick: () => managed.openAccount() })
+            ),
+            h("div", { className: "ai-hint" }, `The access mode and the server are the scmjs.dev plugin's while it provides the sign-in; its Account dialog has the balance, the top-up and the sign-out. Turn off "Let other plugins use this sign-in" there to set them here.`)
+          ]);
+          return;
+        }
         if (info && !offers) {
           append(accountBox, [h("div", { className: "ai-hint ai-bad" }, "This server has no accounts. Use an access token or your own key.")]);
           return;
@@ -6425,11 +6528,14 @@ function openSettings(ctx, store) {
 // plugin.ts
 function activate(api) {
   const store = settingsStore(api);
+  let account;
   const client = new AiClient(() => {
     const s = store.get();
-    return { serverUrl: s.serverUrl, access: s.access, session: s.session, token: s.token, ownKey: s.ownKey };
+    const m = account?.managedBy() ?? null;
+    return { serverUrl: m?.serverUrl() ?? s.serverUrl, access: s.access, session: m?.session() ?? s.session, token: s.token, ownKey: s.ownKey };
   });
-  const account = new AccountManager(store, client);
+  account = new AccountManager(store, client);
+  api.services.watch(SCMJS_ACCOUNT_SERVICE, (service) => account.setProvider(service));
   const ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store), presence: null };
   const assistant = { messages: [] };
   let assistantPanel = null;

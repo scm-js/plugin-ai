@@ -8,7 +8,16 @@
  */
 import type { AccountView, AccountsInfo, Allowance } from "./protocol";
 import { AiClient, AiError, formatUsd } from "./client";
+import type { ScmjsAccountService } from "./scmjsdev";
 import type { SettingsStore } from "./settings";
+
+/** A failure from the scmjs.dev plugin's service, as this plugin's dialogs read it. */
+function toAiError(err: unknown): AiError {
+  if (err instanceof AiError) return err;
+  const e = err as { code?: string; message?: string; retryAfterSec?: number } | null;
+  const code = (e?.code ?? "network") as AiError["code"];
+  return new AiError(code, e?.message ?? String(err), { retryAfterSec: e?.retryAfterSec });
+}
 
 export class AccountManager {
   private readonly store: SettingsStore;
@@ -17,6 +26,9 @@ export class AccountManager {
   private info: AccountsInfo | null = null;
   private readonly listeners = new Set<() => void>();
   private pending: Promise<void> | null = null;
+  /** The scmjs.dev plugin's sign-in, while that plugin holds it out; then the session and the sign-in are its. */
+  private provider: ScmjsAccountService | null = null;
+  private offProvider: (() => void) | null = null;
 
   constructor(store: SettingsStore, client: AiClient) {
     this.store = store;
@@ -25,11 +37,33 @@ export class AccountManager {
     client.onRemaining = (r) => this.noteRemaining(r);
   }
 
+  /**
+   * Follow (or stop following) the scmjs.dev plugin's service. While one is set and the
+   * access mode is `account`, everything about the session is asked of it: the session
+   * itself, the sign-in, the sign-out, the balance. `null` goes back to this plugin's own.
+   */
+  setProvider(provider: ScmjsAccountService | null): void {
+    if (provider === this.provider) return;
+    this.offProvider?.();
+    this.offProvider = null;
+    this.provider = provider;
+    if (provider) this.offProvider = provider.onChange(() => this.changed());
+    this.changed();
+  }
+
+  /** The service this plugin follows, when the access mode is `account` and the scmjs.dev plugin is there. */
+  managedBy(): ScmjsAccountService | null { return this.active() ? this.provider : null; }
+  managed(): boolean { return this.managedBy() !== null; }
+
   /** What the server said it offers, once `info()` or a sign-in fetched it. */
-  offers(): AccountsInfo | null { return this.info; }
-  current(): AccountView | null { return this.view; }
+  offers(): AccountsInfo | null { return this.managedBy()?.state().offers ?? this.info; }
+  current(): AccountView | null { const m = this.managedBy(); return m ? m.state().account : this.view; }
   active(): boolean { return this.store.get().access === "account"; }
-  signedIn(): boolean { return this.active() && !!this.store.get().session && this.view?.kind === "account"; }
+  signedIn(): boolean {
+    const m = this.managedBy();
+    if (m) return m.state().kind === "account";
+    return this.active() && !!this.store.get().session && this.view?.kind === "account";
+  }
 
   onChange(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -45,7 +79,10 @@ export class AccountManager {
   }
 
   private noteRemaining(r: Allowance) {
-    if (r.balanceUsd === undefined || !this.view) return;
+    if (r.balanceUsd === undefined) return;
+    const m = this.managedBy();
+    if (m) { m.noteBalance(r.balanceUsd); return; }
+    if (!this.view) return;
     const weekly = Math.max(0, Math.min(this.view.weeklyUsd, r.balanceUsd));
     this.view = { ...this.view, balanceUsd: r.balanceUsd, weeklyUsd: weekly, creditUsd: Math.max(0, r.balanceUsd - weekly) };
     this.changed();
@@ -57,6 +94,8 @@ export class AccountManager {
    * with a link to Settings.
    */
   ensureSession(): Promise<void> {
+    const m = this.managedBy();
+    if (m) return m.ensureSession().catch((err) => { throw toAiError(err); });
     if (!this.active() || this.store.get().session) return Promise.resolve();
     if (!this.pending) {
       this.pending = this.startTrial().finally(() => { this.pending = null; });
@@ -81,6 +120,8 @@ export class AccountManager {
 
   /** Re-read the account; a session the server no longer knows is dropped. */
   async refresh(): Promise<AccountView | null> {
+    const m = this.managedBy();
+    if (m) { try { return await m.refresh(); } catch (err) { throw toAiError(err); } }
     if (!this.active() || !this.store.get().session) { this.view = null; this.changed(); return null; }
     try {
       const r = await this.client.account();
@@ -100,6 +141,8 @@ export class AccountManager {
    * first or nothing arrives in five minutes.
    */
   async signIn(provider: string): Promise<AccountView> {
+    const m = this.managedBy();
+    if (m) { try { return await m.signIn(provider); } catch (err) { throw toAiError(err); } }
     const origin = new URL(this.client.base()).origin;
     const popup = window.open("", "scmjs-ai-signin", "width=540,height=720,popup=yes");
     if (!popup) throw new AiError("network", "the browser blocked the sign-in window; allow popups for this site and try again.");
@@ -130,6 +173,8 @@ export class AccountManager {
   }
 
   async signOut(): Promise<void> {
+    const m = this.managedBy();
+    if (m) { await m.signOut(); return; }
     if (this.store.get().session) { try { await this.client.logout(); } catch { /* the session is dropped locally regardless */ } }
     this.store.set({ session: "" });
     this.view = null;
@@ -143,6 +188,8 @@ export class AccountManager {
   }
 
   openAccountPage(): void {
+    const m = this.managedBy();
+    if (m) { m.openAccount(); return; }
     const url = this.info?.accountUrl ?? `${this.client.base()}/account`;
     window.open(url, "_blank", "noopener");
   }
@@ -150,7 +197,9 @@ export class AccountManager {
   /** One line for the dialogs: what is left and when it refills. */
   summary(): string | null {
     if (!this.active()) return null;
-    const v = this.view;
+    const m = this.managedBy();
+    const v = m ? m.state().account : this.view;
+    if (m && !v) return m.state().kind === "guest" ? "scmjs.dev: first use starts a free trial, or sign in from the Account menu." : "scmjs.dev: balance unknown until the next call.";
     if (!v) return this.store.get().session ? "Account: balance unknown until the next call." : "First use starts a free trial.";
     if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in for a weekly allowance.`;
     const resets = v.resetsAt ? ` · refills ${shortDay(v.resetsAt)}` : "";
