@@ -176,8 +176,8 @@ export function openScenario(ctx: Ctx, presetPrompt?: string) {
         return {
           set(s: StepState, text = "") {
             row.className = `ai-step is-${s}`;
-            mark.className = s === "running" ? "ai-step-mark ai-spin" : "ai-step-mark";
-            mark.textContent = s === "running" ? "" : s === "done" ? "✓" : s === "failed" ? "✗" : s === "skipped" ? "–" : "○";
+            if (s === "running") mark.replaceChildren(w.spinner({ size: "sm" }));
+            else mark.textContent = s === "done" ? "✓" : s === "failed" ? "✗" : s === "skipped" ? "–" : "○";
             detail.textContent = text;
             detail.title = text;
           },
@@ -213,8 +213,8 @@ export function openScenario(ctx: Ctx, presetPrompt?: string) {
           scriptPlugin: hasScriptPlugin(api),
           guide: guideFor(state.prompt)?.text,
         };
-        designButton.disabled = true;
-        redesignButton.disabled = true;
+        designButton.setBusy(true);
+        redesignButton.setBusy(true);
         try {
           const r = await runRecipe(ctx, runner, "ums-design", input);
           if (!r) return;
@@ -226,8 +226,8 @@ export function openScenario(ctx: Ctx, presetPrompt?: string) {
           showDesign(r.output);
           designBox.scrollIntoView({ block: "nearest" });
         } finally {
-          designButton.disabled = false;
-          redesignButton.disabled = false;
+          designButton.setBusy(false);
+          redesignButton.setBusy(false);
         }
       };
 
@@ -259,8 +259,8 @@ export function openScenario(ctx: Ctx, presetPrompt?: string) {
         const d = state.design;
         if (!d || !(await ensureMap())) return;
         await api.tileset.load();
-        buildButton.disabled = true;
-        redesignButton.disabled = true;
+        buildButton.setBusy(true);
+        redesignButton.setBusy(true);
         stepsBox.replaceChildren();
         stepsBox.hidden = false;
         afterBox.hidden = true;
@@ -398,8 +398,8 @@ export function openScenario(ctx: Ctx, presetPrompt?: string) {
           }
         }
         state.built = true;
-        buildButton.disabled = false;
-        redesignButton.disabled = false;
+        buildButton.setBusy(false);
+        redesignButton.setBusy(false);
         if (findings.length) findingsBox.replaceChildren(h("details", { open: failed > 0 }, h("summary", null, `${findings.length} thing${findings.length === 1 ? "" : "s"} to know`), h("div", { className: "ai-body" }, noteList(findings))));
         afterBox.replaceChildren(
           w.button("Review it…", { onClick: () => { dialog.close(); openReview(ctx); } }),

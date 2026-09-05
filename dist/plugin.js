@@ -2283,13 +2283,7 @@ var STYLE = `
 .ai .ai-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .ai .ai-chip { padding: 2px 8px; border: 1px solid var(--border, #333); border-radius: 10px; background: var(--bg-2, #1b1f27); color: var(--text-dim, #99a2b3); cursor: pointer; font-size: 11px; }
 .ai .ai-chip:hover { color: var(--text, #e6e9ef); border-color: var(--teal, #4fd1c5); }
-.ai .ai-runner { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); }
-.ai .ai-runner-line { display: flex; align-items: center; gap: 8px; min-height: 20px; }
-.ai .ai-runner-line .ai-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ai .ai-runner-line .ai-dim { color: var(--text-dim, #99a2b3); }
-.ai .ai-bar { height: 4px; border-radius: 2px; background: var(--bg-3, #232833); overflow: hidden; }
-.ai .ai-bar > i { display: block; height: 100%; width: 30%; background: var(--teal, #4fd1c5); animation: ai-slide 1.4s ease-in-out infinite; }
-@keyframes ai-slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+.ai .ai-runner { display: flex; flex-direction: column; gap: 4px; padding: 2px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); }
 .ai .ai-bad { color: #ff9f7a; }
 .ai .ai-ok { color: var(--teal, #4fd1c5); }
 .ai .ai-gold { color: var(--gold, #e6b95c); }
@@ -2349,18 +2343,13 @@ var STYLE = `
 .ai .ai-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .ai .ai-pill { padding: 0 6px; border-radius: 8px; background: var(--bg-3, #232833); color: var(--text-dim, #99a2b3); font-size: 10px; white-space: nowrap; }
 .ai .ai-pill:empty { display: none; }
-.ai .ai-shimmer { height: 2px; border-radius: 1px; background: var(--bg-3, #232833); overflow: hidden; }
-.ai .ai-shimmer > i { display: block; height: 100%; width: 35%; background: linear-gradient(90deg, transparent, var(--teal, #4fd1c5), transparent); animation: ai-slide 1.6s ease-in-out infinite; }
-.ai .ai-state.is-tools .ai-shimmer > i { background: linear-gradient(90deg, transparent, var(--gold, #e6b95c), transparent); }
 .ai .ai-caret { display: inline-block; width: 6px; height: 12px; margin-left: 2px; vertical-align: -2px; background: var(--teal, #4fd1c5); animation: ai-blink 1s steps(2) infinite; }
 @keyframes ai-blink { to { opacity: 0; } }
 .ai .ai-tool.is-pending code { color: var(--text-dim, #99a2b3); }
-.ai .ai-tool-mark { flex: none; width: 12px; text-align: center; }
-.ai .ai-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--text-faint, #6b7382); border-top-color: var(--teal, #4fd1c5); animation: ai-spin 0.8s linear infinite; }
-@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai .ai-tool-mark { flex: none; width: 12px; display: inline-flex; align-items: center; justify-content: center; }
 .ai .ai-steps { display: flex; flex-direction: column; gap: 3px; }
 .ai .ai-step { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
-.ai .ai-step .ai-step-mark { flex: none; width: 14px; text-align: center; }
+.ai .ai-step .ai-step-mark { flex: none; width: 14px; display: inline-flex; align-items: center; justify-content: center; }
 .ai .ai-step.is-running { background: var(--bg-3, #232833); }
 .ai .ai-step.is-done .ai-step-mark { color: var(--teal, #4fd1c5); }
 .ai .ai-step.is-failed .ai-step-mark { color: #ff9f7a; }
@@ -2386,11 +2375,9 @@ function textarea(props) {
 }
 var Runner = class {
   el;
-  line;
-  bar;
+  status;
   thinking;
   thinkingBody;
-  stopButton;
   timer = null;
   startedAt = 0;
   controller = null;
@@ -2398,13 +2385,10 @@ var Runner = class {
   ctx;
   constructor(ctx) {
     this.ctx = ctx;
-    this.line = h("div", { className: "ai-runner-line" }, h("span", { className: "ai-grow ai-dim" }, "Ready."));
-    this.bar = h("div", { className: "ai-bar", hidden: true }, h("i"));
+    this.status = ctx.api.ui.widgets.statusLine({ text: "Ready." });
     this.thinkingBody = h("div", { className: "ai-body" });
     this.thinking = h("details", { hidden: true }, h("summary", null, "Reasoning"), this.thinkingBody);
-    this.stopButton = ctx.api.ui.widgets.button("Stop", { onClick: () => this.abort(), ghost: true });
-    this.stopButton.hidden = true;
-    this.el = h("div", { className: "ai-runner" }, this.line, this.bar, this.thinking);
+    this.el = h("div", { className: "ai-runner" }, this.status, this.thinking);
   }
   get signal() {
     return this.controller?.signal;
@@ -2412,18 +2396,12 @@ var Runner = class {
   get busy() {
     return this.controller !== null;
   }
-  setLine(...children) {
-    clear(this.line);
-    append(this.line, children);
-    this.line.append(this.stopButton);
-  }
   start(model) {
     this.abort();
     this.controller = new AbortController();
     this.model = model;
     this.startedAt = Date.now();
-    this.stopButton.hidden = false;
-    this.bar.hidden = false;
+    this.status.cancel(() => this.abort(), "Stop");
     clear(this.thinkingBody);
     this.thinking.hidden = !this.ctx.settings().showThinking;
     this.thinking.open = false;
@@ -2432,7 +2410,7 @@ var Runner = class {
   }
   tick() {
     const s = Math.round((Date.now() - this.startedAt) / 1e3);
-    this.setLine(h("span", { className: "ai-grow" }, `Asking ${this.model || "the model"}\u2026`), h("span", { className: "ai-dim" }, `${s} s`));
+    this.status.progress(`Asking ${this.model || "the model"}\u2026 ${s} s`, null);
   }
   setModel(model) {
     this.model = model;
@@ -2449,15 +2427,19 @@ var Runner = class {
       this.timer = null;
     }
     this.controller = null;
-    this.stopButton.hidden = true;
-    this.bar.hidden = true;
+    this.status.cancel(null);
   }
   finish(usage, note) {
     this.settle();
-    this.setLine(
-      h("span", { className: "ai-grow" }, note ?? "Done.", " ", h("span", { className: "ai-dim" }, formatUsage(usage))),
+    this.status.set(h(
+      "span",
+      null,
+      note ?? "Done.",
+      " ",
+      h("span", { className: "ai-dim" }, formatUsage(usage)),
+      " \xB7 ",
       h("span", { className: "ai-dim", title: "What this session has cost so far" }, this.ctx.ledger.summary())
-    );
+    ));
   }
   fail(err) {
     this.settle();
@@ -2467,11 +2449,11 @@ var Runner = class {
       e.preventDefault();
       this.ctx.openSettings();
     } }, err instanceof AiError && err.code === "budget_exceeded" ? this.ctx.account.signedIn() ? "Top up or wait" : "Sign in" : "Open AI Settings") : null;
-    this.setLine(h("span", { className: "ai-grow ai-bad", title: text }, text), settingsLink);
+    this.status.set(settingsLink ? h("span", { title: text }, text, " ", settingsLink) : text, "error");
   }
   idle(text = "Ready.") {
     this.settle();
-    this.setLine(h("span", { className: "ai-grow ai-dim" }, text));
+    this.status.set(text);
   }
   abort() {
     this.controller?.abort();
@@ -4522,7 +4504,8 @@ function openAssistant(ctx, state) {
       const phaseDetail = h("span", { className: "ai-dim ai-grow ai-phase-detail" }, "");
       const clock = h("span", { className: "ai-dim ai-mono" }, "");
       const cost = h("span", { className: "ai-pill", title: "What this panel has cost \xB7 what the session has cost" }, "");
-      const shimmer = h("div", { className: "ai-shimmer", hidden: true }, h("i"));
+      const shimmer = w.progressBar({ value: null, percent: false });
+      shimmer.hidden = true;
       const strip = h("div", { className: "ai-state is-idle" }, h("div", { className: "ai-state-line" }, phaseLabel, phaseDetail, clock, cost), shimmer);
       let phase = "idle";
       let startedAt = 0;
@@ -4584,7 +4567,7 @@ function openAssistant(ctx, state) {
         };
       };
       const addTool = (tool, call, pending) => {
-        const mark = h("span", { className: pending ? "ai-tool-mark ai-spin" : "ai-tool-mark" }, pending ? "" : "\u2026");
+        const mark = h("span", { className: "ai-tool-mark" }, pending ? w.spinner({ size: "sm" }) : "\u2026");
         const code = h("code", null, call);
         const row = h(
           "div",
@@ -4675,8 +4658,7 @@ function openAssistant(ctx, state) {
         row.code.textContent = described;
         row.row.title = described;
         row.row.classList.remove("is-pending");
-        row.mark.className = "ai-tool-mark ai-spin";
-        row.mark.textContent = "";
+        row.mark.replaceChildren(w.spinner({ size: "sm" }));
         setPhase("tools", call.name.replace(/_/g, " "));
         const footprint = footprintOf(api, call.name, call.input ?? {});
         intent.show(footprint);
@@ -4687,7 +4669,6 @@ function openAssistant(ctx, state) {
             chat.append(h("div", { className: "ai-shot" }, h("img", { src: `data:${out.image.mediaType};base64,${out.image.data}`, alt: "screenshot" })));
             scroll();
           }
-          row.mark.className = "ai-tool-mark";
           row.mark.textContent = "\u2713";
           row.row.title = `${described}
 \u2192 ${summarizeResult(out)}`;
@@ -4699,7 +4680,6 @@ function openAssistant(ctx, state) {
           }
           return { result: toContent(call.id, typeof out === "string" ? capResult(out) : out), tool, failed: false };
         } catch (err) {
-          row.mark.className = "ai-tool-mark";
           row.mark.textContent = "\u2717";
           row.row.classList.add("ai-bad");
           row.row.title = `${described}
@@ -4733,7 +4713,7 @@ function openAssistant(ctx, state) {
         }
         state.messages.push({ role: "user", content });
         running = new AbortController();
-        send.disabled = true;
+        send.setBusy(true);
         stop.hidden = false;
         startedAt = Date.now();
         const historyBefore = api.document.history().undoDepth;
@@ -4812,7 +4792,6 @@ function openAssistant(ctx, state) {
               if (tool?.writes && !failed) (tool.settings ? settingsWrites : edits).push(call.name);
             }
             for (const row of pendingRows.values()) {
-              row.mark.className = "ai-tool-mark";
               row.mark.textContent = "\u2717";
               row.row.title = "The model named this tool but did not call it.";
             }
@@ -4851,7 +4830,7 @@ function openAssistant(ctx, state) {
         } finally {
           running = null;
           startedAt = 0;
-          send.disabled = false;
+          send.setBusy(false);
           stop.hidden = true;
           intent.show(null);
           input.focus();
@@ -5351,8 +5330,8 @@ Change this: ${state.refine.trim()}` : state.prompt,
           const blob = state.rendered ? await api.document.renderImage({ pixelsPerTile: pixelsPerTileFor(cur.width, cur.height, 4) }) : null;
           input.previous = { plan: state.plan, findings, image: blob ? await imageInput(blob) : void 0 };
         }
-        generateButton.disabled = true;
-        refineButton.disabled = true;
+        generateButton.setBusy(true);
+        refineButton.setBusy(true);
         try {
           const r = await runRecipe(ctx, runner, "map-plan", input);
           if (!r) return;
@@ -5360,8 +5339,8 @@ Change this: ${state.refine.trim()}` : state.prompt,
           showPlan(r.output);
           preview.scrollIntoView({ block: "nearest" });
         } finally {
-          generateButton.disabled = false;
-          refineButton.disabled = false;
+          generateButton.setBusy(false);
+          refineButton.setBusy(false);
         }
       };
       const apply = async () => {
@@ -5594,8 +5573,8 @@ function openScenario(ctx, presetPrompt) {
         return {
           set(s, text = "") {
             row.className = `ai-step is-${s}`;
-            mark.className = s === "running" ? "ai-step-mark ai-spin" : "ai-step-mark";
-            mark.textContent = s === "running" ? "" : s === "done" ? "\u2713" : s === "failed" ? "\u2717" : s === "skipped" ? "\u2013" : "\u25CB";
+            if (s === "running") mark.replaceChildren(w.spinner({ size: "sm" }));
+            else mark.textContent = s === "done" ? "\u2713" : s === "failed" ? "\u2717" : s === "skipped" ? "\u2013" : "\u25CB";
             detail.textContent = text;
             detail.title = text;
           }
@@ -5639,8 +5618,8 @@ Change this: ${state.refine.trim()}` : state.prompt;
           scriptPlugin: hasScriptPlugin(api),
           guide: guideFor(state.prompt)?.text
         };
-        designButton.disabled = true;
-        redesignButton.disabled = true;
+        designButton.setBusy(true);
+        redesignButton.setBusy(true);
         try {
           const r = await runRecipe(ctx, runner, "ums-design", input);
           if (!r) return;
@@ -5652,8 +5631,8 @@ Change this: ${state.refine.trim()}` : state.prompt;
           showDesign(r.output);
           designBox.scrollIntoView({ block: "nearest" });
         } finally {
-          designButton.disabled = false;
-          redesignButton.disabled = false;
+          designButton.setBusy(false);
+          redesignButton.setBusy(false);
         }
       };
       const writeCustom = async (system, d) => {
@@ -5686,8 +5665,8 @@ Hyper triggers ${d.systems.some((s) => s.kind === "hyper") ? "are" : "are not"} 
         const d = state.design;
         if (!d || !await ensureMap()) return;
         await api.tileset.load();
-        buildButton.disabled = true;
-        redesignButton.disabled = true;
+        buildButton.setBusy(true);
+        redesignButton.setBusy(true);
         stepsBox.replaceChildren();
         stepsBox.hidden = false;
         afterBox.hidden = true;
@@ -5851,8 +5830,8 @@ Hyper triggers ${d.systems.some((s) => s.kind === "hyper") ? "are" : "are not"} 
           }
         }
         state.built = true;
-        buildButton.disabled = false;
-        redesignButton.disabled = false;
+        buildButton.setBusy(false);
+        redesignButton.setBusy(false);
         if (findings.length) findingsBox.replaceChildren(h("details", { open: failed > 0 }, h("summary", null, `${findings.length} thing${findings.length === 1 ? "" : "s"} to know`), h("div", { className: "ai-body" }, noteList(findings))));
         afterBox.replaceChildren(
           w.button("Review it\u2026", { onClick: () => {
@@ -6150,8 +6129,8 @@ function installDialogSlots(ctx, actions) {
     mount(body, dlg) {
       const status = api.ui.el("span", { className: "faint" }, "");
       const button = w.button("Suggest a name", { ghost: true, title: "Ask the AI for a name and description from what is on the map; fills the fields, OK writes them", onClick: async () => {
-        button.disabled = true;
-        status.textContent = "Asking\u2026";
+        button.setBusy(true);
+        status.replaceChildren(w.spinner({ size: "sm", label: "Asking\u2026" }));
         try {
           const r = await ctx.client.run("describe", { facts: mapFacts(api), prompt: dlg.fields.description?.get()?.trim() ? `The current description is: ${dlg.fields.description.get()}` : void 0 }, {}, recipeOptions(ctx.settings()));
           dlg.fields.name?.set(r.output.name);
@@ -6160,7 +6139,7 @@ function installDialogSlots(ctx, actions) {
         } catch (err) {
           status.textContent = describeError(err);
         } finally {
-          button.disabled = false;
+          button.setBusy(false);
         }
       } });
       body.append(button, status);

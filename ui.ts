@@ -1,10 +1,12 @@
 /**
  * What every dialog shares: the context object they are opened with, a DOM helper,
- * the plugin's stylesheet, and the *runner* — the strip that shows the model, a
- * progress bar with a live elapsed counter, the reasoning summary when asked for, a
- * Stop button while a request is out, and the cost once it is back.
+ * the plugin's stylesheet, and the *runner* — the editor's status line (`ui.widgets.
+ * statusLine`) with the model, a live elapsed counter and a Stop button while a request
+ * is out, the cost once it is back, and the reasoning summary folded under it when asked
+ * for. Everything that waits here is the editor's own widget kit — the rings, the sliding
+ * bar, the covered box — so the plugin draws none of its own.
  */
-import type { PluginApi, StatusItemHandle } from "@scm-js/plugin-api";
+import type { PluginApi, StatusItemHandle, StatusLineElement } from "@scm-js/plugin-api";
 import type { RecipeInputs, RecipeName, RecipeOptions, Usage } from "./protocol";
 import type { AccountManager } from "./account";
 import { AiClient, AiError, describeError, formatUsage, type Ledger, type RunHooks, type RunResult } from "./client";
@@ -60,13 +62,7 @@ export const STYLE = `
 .ai .ai-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .ai .ai-chip { padding: 2px 8px; border: 1px solid var(--border, #333); border-radius: 10px; background: var(--bg-2, #1b1f27); color: var(--text-dim, #99a2b3); cursor: pointer; font-size: 11px; }
 .ai .ai-chip:hover { color: var(--text, #e6e9ef); border-color: var(--teal, #4fd1c5); }
-.ai .ai-runner { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); }
-.ai .ai-runner-line { display: flex; align-items: center; gap: 8px; min-height: 20px; }
-.ai .ai-runner-line .ai-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ai .ai-runner-line .ai-dim { color: var(--text-dim, #99a2b3); }
-.ai .ai-bar { height: 4px; border-radius: 2px; background: var(--bg-3, #232833); overflow: hidden; }
-.ai .ai-bar > i { display: block; height: 100%; width: 30%; background: var(--teal, #4fd1c5); animation: ai-slide 1.4s ease-in-out infinite; }
-@keyframes ai-slide { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+.ai .ai-runner { display: flex; flex-direction: column; gap: 4px; padding: 2px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); }
 .ai .ai-bad { color: #ff9f7a; }
 .ai .ai-ok { color: var(--teal, #4fd1c5); }
 .ai .ai-gold { color: var(--gold, #e6b95c); }
@@ -126,18 +122,13 @@ export const STYLE = `
 .ai .ai-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
 .ai .ai-pill { padding: 0 6px; border-radius: 8px; background: var(--bg-3, #232833); color: var(--text-dim, #99a2b3); font-size: 10px; white-space: nowrap; }
 .ai .ai-pill:empty { display: none; }
-.ai .ai-shimmer { height: 2px; border-radius: 1px; background: var(--bg-3, #232833); overflow: hidden; }
-.ai .ai-shimmer > i { display: block; height: 100%; width: 35%; background: linear-gradient(90deg, transparent, var(--teal, #4fd1c5), transparent); animation: ai-slide 1.6s ease-in-out infinite; }
-.ai .ai-state.is-tools .ai-shimmer > i { background: linear-gradient(90deg, transparent, var(--gold, #e6b95c), transparent); }
 .ai .ai-caret { display: inline-block; width: 6px; height: 12px; margin-left: 2px; vertical-align: -2px; background: var(--teal, #4fd1c5); animation: ai-blink 1s steps(2) infinite; }
 @keyframes ai-blink { to { opacity: 0; } }
 .ai .ai-tool.is-pending code { color: var(--text-dim, #99a2b3); }
-.ai .ai-tool-mark { flex: none; width: 12px; text-align: center; }
-.ai .ai-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--text-faint, #6b7382); border-top-color: var(--teal, #4fd1c5); animation: ai-spin 0.8s linear infinite; }
-@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai .ai-tool-mark { flex: none; width: 12px; display: inline-flex; align-items: center; justify-content: center; }
 .ai .ai-steps { display: flex; flex-direction: column; gap: 3px; }
 .ai .ai-step { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
-.ai .ai-step .ai-step-mark { flex: none; width: 14px; text-align: center; }
+.ai .ai-step .ai-step-mark { flex: none; width: 14px; display: inline-flex; align-items: center; justify-content: center; }
 .ai .ai-step.is-running { background: var(--bg-3, #232833); }
 .ai .ai-step.is-done .ai-step-mark { color: var(--teal, #4fd1c5); }
 .ai .ai-step.is-failed .ai-step-mark { color: #ff9f7a; }
@@ -169,14 +160,17 @@ export function textarea(props: { value?: string; placeholder?: string; rows?: n
 
 /* ── The runner ─────────────────────────────────────────── */
 
-/** Where a request stands, shown in a strip at the foot of the dialog. */
+/**
+ * Where a request stands, shown in a strip at the foot of the dialog: the editor's own
+ * status line — a ring, "Asking <model>…" with the seconds ticking, the sliding bar and
+ * a Stop button while the request is out; the outcome and the cost once it is back — with
+ * the reasoning summary folded under it.
+ */
 export class Runner {
   readonly el: HTMLElement;
-  private readonly line: HTMLElement;
-  private readonly bar: HTMLElement;
+  private readonly status: StatusLineElement;
   private readonly thinking: HTMLDetailsElement;
   private readonly thinkingBody: HTMLElement;
-  private readonly stopButton: HTMLButtonElement;
   private timer: number | null = null;
   private startedAt = 0;
   private controller: AbortController | null = null;
@@ -185,31 +179,22 @@ export class Runner {
 
   constructor(ctx: Ctx) {
     this.ctx = ctx;
-    this.line = h("div", { className: "ai-runner-line" }, h("span", { className: "ai-grow ai-dim" }, "Ready."));
-    this.bar = h("div", { className: "ai-bar", hidden: true }, h("i"));
+    this.status = ctx.api.ui.widgets.statusLine({ text: "Ready." });
     this.thinkingBody = h("div", { className: "ai-body" });
     this.thinking = h("details", { hidden: true }, h("summary", null, "Reasoning"), this.thinkingBody);
-    this.stopButton = ctx.api.ui.widgets.button("Stop", { onClick: () => this.abort(), ghost: true });
-    this.stopButton.hidden = true;
-    this.el = h("div", { className: "ai-runner" }, this.line, this.bar, this.thinking);
+    this.el = h("div", { className: "ai-runner" }, this.status, this.thinking);
   }
 
   get signal(): AbortSignal | undefined { return this.controller?.signal; }
   get busy(): boolean { return this.controller !== null; }
-
-  private setLine(...children: Child[]) {
-    clear(this.line);
-    append(this.line, children);
-    this.line.append(this.stopButton);
-  }
 
   start(model: string) {
     this.abort();
     this.controller = new AbortController();
     this.model = model;
     this.startedAt = Date.now();
-    this.stopButton.hidden = false;
-    this.bar.hidden = false;
+    // "Stop", not Cancel: Cancel in a dialog means leaving it, and this leaves the dialog where it is.
+    this.status.cancel(() => this.abort(), "Stop");
     clear(this.thinkingBody);
     this.thinking.hidden = !this.ctx.settings().showThinking;
     this.thinking.open = false;
@@ -219,7 +204,7 @@ export class Runner {
 
   private tick() {
     const s = Math.round((Date.now() - this.startedAt) / 1000);
-    this.setLine(h("span", { className: "ai-grow" }, `Asking ${this.model || "the model"}…`), h("span", { className: "ai-dim" }, `${s} s`));
+    this.status.progress(`Asking ${this.model || "the model"}… ${s} s`, null);
   }
 
   setModel(model: string) { this.model = model; this.tick(); }
@@ -233,16 +218,15 @@ export class Runner {
   private settle() {
     if (this.timer !== null) { window.clearInterval(this.timer); this.timer = null; }
     this.controller = null;
-    this.stopButton.hidden = true;
-    this.bar.hidden = true;
+    this.status.cancel(null);
   }
 
   finish(usage: Usage, note?: string) {
     this.settle();
-    this.setLine(
-      h("span", { className: "ai-grow" }, note ?? "Done.", " ", h("span", { className: "ai-dim" }, formatUsage(usage))),
-      h("span", { className: "ai-dim", title: "What this session has cost so far" }, this.ctx.ledger.summary()),
-    );
+    this.status.set(h("span", null,
+      note ?? "Done.", " ", h("span", { className: "ai-dim" }, formatUsage(usage)),
+      " · ", h("span", { className: "ai-dim", title: "What this session has cost so far" }, this.ctx.ledger.summary()),
+    ));
   }
 
   fail(err: unknown) {
@@ -252,12 +236,13 @@ export class Runner {
     const settingsLink = wantsSettings
       ? h("a", { href: "#", onClick: (e: Event) => { e.preventDefault(); this.ctx.openSettings(); } }, err instanceof AiError && err.code === "budget_exceeded" ? (this.ctx.account.signedIn() ? "Top up or wait" : "Sign in") : "Open AI Settings")
       : null;
-    this.setLine(h("span", { className: "ai-grow ai-bad", title: text }, text), settingsLink);
+    // A line that carries a link is a node, not a string; the status line takes either.
+    this.status.set(settingsLink ? h("span", { title: text }, text, " ", settingsLink) : text, "error");
   }
 
   idle(text = "Ready.") {
     this.settle();
-    this.setLine(h("span", { className: "ai-grow ai-dim" }, text));
+    this.status.set(text);
   }
 
   abort() {

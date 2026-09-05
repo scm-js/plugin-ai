@@ -28,8 +28,8 @@ export function installDialogSlots(ctx: Ctx, actions: SlotActions) {
     mount(body, dlg) {
       const status = api.ui.el("span", { className: "faint" }, "");
       const button = w.button("Suggest a name", { ghost: true, title: "Ask the AI for a name and description from what is on the map; fills the fields, OK writes them", onClick: async () => {
-        button.disabled = true;
-        status.textContent = "Asking…";
+        button.setBusy(true);
+        status.replaceChildren(w.spinner({ size: "sm", label: "Asking…" }));
         try {
           const r = await ctx.client.run("describe", { facts: mapFacts(api), prompt: dlg.fields.description?.get()?.trim() ? `The current description is: ${dlg.fields.description.get()}` : undefined }, {}, recipeOptions(ctx.settings()));
           dlg.fields.name?.set(r.output.name);
@@ -38,7 +38,7 @@ export function installDialogSlots(ctx: Ctx, actions: SlotActions) {
         } catch (err) {
           status.textContent = describeError(err);
         } finally {
-          button.disabled = false;
+          button.setBusy(false);
         }
       } });
       body.append(button, status);

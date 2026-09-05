@@ -160,8 +160,8 @@ export function openGenerate(ctx: Ctx) {
           const blob = state.rendered ? await api.document.renderImage({ pixelsPerTile: pixelsPerTileFor(cur.width, cur.height, 4) }) : null;
           input.previous = { plan: state.plan, findings, image: blob ? await imageInput(blob) : undefined };
         }
-        generateButton.disabled = true;
-        refineButton.disabled = true;
+        generateButton.setBusy(true);
+        refineButton.setBusy(true);
         try {
           const r = await runRecipe(ctx, runner, "map-plan", input);
           if (!r) return;
@@ -169,8 +169,8 @@ export function openGenerate(ctx: Ctx) {
           showPlan(r.output);
           preview.scrollIntoView({ block: "nearest" });
         } finally {
-          generateButton.disabled = false;
-          refineButton.disabled = false;
+          generateButton.setBusy(false);
+          refineButton.setBusy(false);
         }
       };
 

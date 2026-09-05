@@ -169,7 +169,9 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
       const phaseDetail = h("span", { className: "ai-dim ai-grow ai-phase-detail" }, "");
       const clock = h("span", { className: "ai-dim ai-mono" }, "");
       const cost = h("span", { className: "ai-pill", title: "What this panel has cost · what the session has cost" }, "");
-      const shimmer = h("div", { className: "ai-shimmer", hidden: true }, h("i"));
+      // The sliding bar under the line while a request is out — the editor's, not a strip of our own.
+      const shimmer = w.progressBar({ value: null, percent: false });
+      shimmer.hidden = true;
       const strip = h("div", { className: "ai-state is-idle" }, h("div", { className: "ai-state-line" }, phaseLabel, phaseDetail, clock, cost), shimmer);
       let phase: Phase = "idle";
       let startedAt = 0;
@@ -208,7 +210,7 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
         };
       };
       const addTool = (tool: Tool | undefined, call: string, pending: boolean) => {
-        const mark = h("span", { className: pending ? "ai-tool-mark ai-spin" : "ai-tool-mark" }, pending ? "" : "…");
+        const mark = h("span", { className: "ai-tool-mark" }, pending ? w.spinner({ size: "sm" }) : "…");
         const code = h("code", null, call);
         const row = h("div", { className: `ai-tool${pending ? " is-pending" : ""}`, title: call },
           h("span", { className: tool?.writes ? "ai-gold" : "ai-dim", title: tool?.writes ? (tool.settings ? "changes the map (a settings transaction, not undoable)" : "changes the map (one undo step)") : "reads" }, tool?.writes ? "✎" : "▸"),
@@ -277,8 +279,7 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
         row.code.textContent = described;
         row.row.title = described;
         row.row.classList.remove("is-pending");
-        row.mark.className = "ai-tool-mark ai-spin";
-        row.mark.textContent = "";
+        row.mark.replaceChildren(w.spinner({ size: "sm" }));
         setPhase("tools", call.name.replace(/_/g, " "));
         const footprint = footprintOf(api, call.name, call.input ?? {});
         intent.show(footprint);
@@ -289,7 +290,6 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
             chat.append(h("div", { className: "ai-shot" }, h("img", { src: `data:${out.image.mediaType};base64,${out.image.data}`, alt: "screenshot" })));
             scroll();
           }
-          row.mark.className = "ai-tool-mark";
           row.mark.textContent = "✓";
           row.row.title = `${described}\n→ ${summarizeResult(out)}`;
           if (!footprintEmpty(footprint)) {
@@ -300,7 +300,6 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
           }
           return { result: toContent(call.id, typeof out === "string" ? capResult(out) : out), tool, failed: false };
         } catch (err) {
-          row.mark.className = "ai-tool-mark";
           row.mark.textContent = "✗";
           row.row.classList.add("ai-bad");
           row.row.title = `${described}\n✗ ${(err as Error).message}`;
@@ -329,7 +328,7 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
         }
         state.messages.push({ role: "user", content });
         running = new AbortController();
-        send.disabled = true;
+        send.setBusy(true);
         stop.hidden = false;
         startedAt = Date.now();
         const historyBefore = api.document.history().undoDepth;
@@ -385,7 +384,7 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
               results.push(result);
               if (tool?.writes && !failed) (tool.settings ? settingsWrites : edits).push(call.name);
             }
-            for (const row of pendingRows.values()) { row.mark.className = "ai-tool-mark"; row.mark.textContent = "✗"; row.row.title = "The model named this tool but did not call it."; }
+            for (const row of pendingRows.values()) { row.mark.textContent = "✗"; row.row.title = "The model named this tool but did not call it."; }
             state.messages.push({ role: "user", content: results });
             if (round === maxRounds - 1) stoppedAtLimit = true;
           }
@@ -415,7 +414,7 @@ export function openAssistant(ctx: Ctx, state: AssistantState): AssistantHandle 
         } finally {
           running = null;
           startedAt = 0;
-          send.disabled = false;
+          send.setBusy(false);
           stop.hidden = true;
           intent.show(null);
           input.focus();
