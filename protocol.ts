@@ -177,7 +177,7 @@ export interface AccountsInfo {
   trial: boolean;
   /** Dollars a trial starts with. */
   trialUsd: number;
-  /** The default tier's weekly allowance, for the sign-in pitch. */
+  /** The default role's weekly allowance, for the sign-in pitch. */
   weeklyUsd: number;
   /** Credit packs on sale; empty when the server takes no payments. */
   packs: CreditPack[];
@@ -199,7 +199,10 @@ export interface AccountView {
   kind: "trial" | "account";
   /** The display name from the provider; absent for a trial. */
   name?: string;
-  tier: string;
+  /** The role the account is on (`trial` for a trial): what it may call and how much a week. */
+  role: string;
+  /** The role has no balance: nothing is checked or charged. */
+  unlimited?: boolean;
   /** Weekly allowance left plus purchased credit. */
   balanceUsd: number;
   weeklyUsd: number;
@@ -259,6 +262,75 @@ export interface CheckoutRequest {
 export interface CheckoutResponse {
   /** The payment page, for a new tab. */
   url: string;
+}
+
+/* ── Admin ──────────────────────────────────────────────── */
+
+/**
+ * `/v1/admin/*`, for an account whose role is `admin` or a bearer from the server's
+ * `accounts.adminTokens`: see and change roles, accounts, balances and the ledger. Meant
+ * for the site or a script, not the plugin.
+ */
+export interface AdminRole {
+  name: string;
+  weeklyUsd: number;
+  unlimited: boolean;
+  admin: boolean;
+  limits?: { requestsPerMinute?: number; requestsPerDay?: number; budgetUsdPerDay?: number; concurrent?: number };
+  recipes?: RecipeName[];
+  models?: string[];
+}
+
+export interface AdminUser {
+  id: string;
+  kind: "trial" | "account";
+  name: string | null;
+  role: string;
+  unlimited: boolean;
+  balanceUsd: number;
+  weeklyUsd: number;
+  creditUsd: number;
+  /** Charges, all time. */
+  spentUsd: number;
+  createdAt: string;
+  lastSeenAt: string;
+  identities: { provider: string; subject: string; name: string | null; email: string | null }[];
+}
+
+export interface AdminUserDetail extends AdminUser {
+  ledger: LedgerEntry[];
+  sessions: number;
+}
+
+export interface AdminLedgerEntry extends LedgerEntry {
+  userId: string;
+  userName: string | null;
+}
+
+export interface AdminOverview {
+  users: { total: number; trials: number; accounts: number; byRole: Record<string, number> };
+  thisWeek: { trials: number; signIns: number; chargedUsd: number; purchasedUsd: number };
+  allTime: { chargedUsd: number; purchasedUsd: number; grantedUsd: number };
+  roles: AdminRole[];
+  defaultRole: string;
+  members: Record<string, string>;
+  packs: CreditPack[];
+  providers: { id: string; name: string }[];
+  /** Who asked: a token, or an admin account's name. */
+  actor: string;
+}
+
+/** `GET /v1/admin/users?q=&role=&kind=&limit=&before=` — newest first; `before` is the last row's `createdAt`. */
+export interface AdminUserList {
+  users: AdminUser[];
+  /** Pass back as `before` for the next page; absent on the last. */
+  next?: string;
+}
+
+export interface AdminLedgerList {
+  entries: AdminLedgerEntry[];
+  /** The last row's id, for `before`. */
+  next?: number;
 }
 
 export interface InfoResponse {
