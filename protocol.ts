@@ -52,10 +52,16 @@ export type RecipeName =
   /** Rewrite the string table under an instruction (translate, fix spelling, retone). */
   | "strings"
   /** One turn of the assistant: a tool-using conversation about the open map. */
-  | "agent";
+  | "agent"
+  /**
+   * A scenario's design document from a prompt ("a madness map", "an RPG about …"):
+   * genre, premise, players and forces, the systems it runs on, the layout brief for
+   * `map-plan`, objectives and briefing. The plugin executes it step by step.
+   */
+  | "ums-design";
 
 export const RECIPE_NAMES: readonly RecipeName[] = [
-  "map-plan", "region-plan", "triggers", "explain-triggers", "describe", "briefing", "review", "strings", "agent",
+  "map-plan", "region-plan", "triggers", "explain-triggers", "describe", "briefing", "review", "strings", "agent", "ums-design",
 ];
 
 export interface RecipeInputs {
@@ -68,6 +74,7 @@ export interface RecipeInputs {
   "review": ReviewInput;
   "strings": StringsInput;
   "agent": AgentInput;
+  "ums-design": UmsDesignInput;
 }
 
 export interface RecipeOutputs {
@@ -80,6 +87,7 @@ export interface RecipeOutputs {
   "review": ReviewOutput;
   "strings": StringsOutput;
   "agent": AgentOutput;
+  "ums-design": UmsDesign;
 }
 
 /** Per-request knobs the caller may set; the server clamps them to its config. */
@@ -124,8 +132,14 @@ export type RecipeEvent<N extends RecipeName = RecipeName> =
   | { event: "progress"; elapsedMs: number }
   /** The model's reasoning summary, when `options.thinking` asked for it. */
   | { event: "thinking"; text: string }
-  /** Text as it arrives — only the recipes whose output is prose stream it. */
+  /** Text as it arrives — the prose recipes and the assistant's own words stream it. */
   | { event: "delta"; text: string }
+  /**
+   * The assistant (`agent`) started a tool call: its name is known the moment the model
+   * commits to it, its arguments only when the turn ends (they are in the `result`). A
+   * transcript shows the call as pending on this and fills it in from the result.
+   */
+  | { event: "tool_use"; id: string; name: string }
   | { event: "result"; output: RecipeOutputs[N]; usage: Usage; remaining?: Allowance }
   | { event: "error"; error: ErrorBody["error"] }
   | { event: "done" };
@@ -414,6 +428,90 @@ export interface MapFacts {
   view?: string;
   /** The top of the undo and redo stacks. */
   history?: string;
+}
+
+/* ── ums-design ─────────────────────────────────────────── */
+
+/**
+ * One kind of trigger system the plugin can build without the model writing a trigger:
+ * hyper triggers, a spawn cycle, kill-to-cash, a leaderboard, victory for the last one
+ * standing… The plugin sends its catalogue with every design request, so the design
+ * names only kinds that exist and the server carries no copy of the toolkit.
+ */
+export interface SystemKindSpec {
+  kind: string;
+  description: string;
+  params: { name: string; description: string; required: boolean }[];
+}
+
+export interface UmsDesignInput {
+  /** What the person asked for. */
+  prompt: string;
+  width: number;
+  height: number;
+  tileset: string;
+  /** Playable slots the map may use, 1–8. */
+  players: number;
+  terrains: TerrainVocab[];
+  unitNames: string[];
+  /** The plugin's toolkit; a system whose `kind` is not here (or `"custom"`) is scripted by the `triggers` recipe. */
+  systemKinds: SystemKindSpec[];
+  /** Whether the Trigger Script plugin is on, so `custom` systems can be written at all. */
+  scriptPlugin: boolean;
+  /** The genre guide the plugin picked for the prompt, when it has one. */
+  guide?: string;
+}
+
+export interface DesignPlayer {
+  /** 1–8. */
+  slot: number;
+  type: "human" | "computer" | "rescuable" | "neutral";
+  race: "terran" | "zerg" | "protoss" | "random" | "userSelect";
+  /** 1–4. */
+  force: number;
+  /** What this slot is for: "the hero player", "spawns the monsters", "holds the shop". */
+  role: string;
+}
+
+export interface DesignForce {
+  /** 1–4. */
+  index: number;
+  name: string;
+  allied: boolean;
+  alliedVictory: boolean;
+  sharedVision: boolean;
+}
+
+export interface DesignSystem {
+  /** A short name, unique in the design: "Zergling spawns", "Kill bounty". */
+  name: string;
+  /** One of the input's `systemKinds`, or `"custom"` for one the toolkit cannot build. */
+  kind: string;
+  /** The kind's parameters, as strings (a number is written as digits, a list comma-separated, a location or unit by name). */
+  params: { key: string; value: string }[];
+  /** What it does in play; for `custom`, the whole specification the trigger writer works from. */
+  description: string;
+}
+
+/** The design document: everything the plugin needs to build the scenario, step by step. */
+export interface UmsDesign {
+  name: string;
+  description: string;
+  /** "madness", "bound", "defense", "rpg", "diplomacy", "arena", "survival", "other". */
+  genre: string;
+  premise: string;
+  players: DesignPlayer[];
+  forces: DesignForce[];
+  /** The prompt handed to `map-plan`: the terrain, and every location and unit the systems need, by name. */
+  layoutBrief: string;
+  /** The locations the brief must produce, with what each is for. */
+  locations: { name: string; purpose: string }[];
+  systems: DesignSystem[];
+  /** The Set Mission Objectives text. */
+  objectives: string;
+  /** Mission briefing narration, one line each. */
+  briefing: string[];
+  notes: string[];
 }
 
 /* ── map-plan / region-plan ─────────────────────────────── */

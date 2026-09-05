@@ -14,7 +14,9 @@
  * `protocol.ts` is the wire contract shared with the server; `plan.ts` / `grid.ts`
  * turn the layout language into brush strokes; `render.ts` applies a plan as one undo
  * step; `tools.ts` and `assistant.ts` are the tool-using conversation; the dialogs are
- * under `dialogs/`. `@scm-js/plugin-api` is the editor's type declarations, a devDependency
+ * under `dialogs/`; `slots.ts` is what the plugin puts inside the editor's own dialogs, `ums.ts`
+ * the toolkit of trigger systems and `guides.ts` the genre guides behind Make Scenario and the
+ * assistant. `@scm-js/plugin-api` is the editor's type declarations, a devDependency
  * generated from its own `src/plugins/api.ts`; the host erases the type-only import.
  */
 import type { PluginApi } from "@scm-js/plugin-api";
@@ -26,8 +28,10 @@ import { openExplain } from "./dialogs/explain";
 import { openGenerate } from "./dialogs/generate";
 import { openRegion } from "./dialogs/region";
 import { openReview } from "./dialogs/review";
+import { openScenario } from "./dialogs/scenario";
 import { openStrings } from "./dialogs/strings";
 import { openTriggers } from "./dialogs/triggers";
+import { installDialogSlots } from "./slots";
 import { openSettings, settingsStore } from "./settings";
 import type { Ctx } from "./ui";
 
@@ -35,21 +39,26 @@ export default function activate(api: PluginApi) {
   const store = settingsStore(api);
   const client = new AiClient(() => { const s = store.get(); return { serverUrl: s.serverUrl, access: s.access, session: s.session, token: s.token, ownKey: s.ownKey }; });
   const account = new AccountManager(store, client);
-  const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store) };
+  const ctx: Ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store), presence: null };
   const assistant: AssistantState = { messages: [] };
   let assistantPanel: AssistantHandle | null = null;
   const open = () => api.document.isOpen();
   const showAssistant = () => { if (!assistantPanel?.isOpen()) assistantPanel = openAssistant(ctx, assistant); return assistantPanel; };
-
-  api.commands.register({ id: "generate", title: "AI: Generate Map", run: () => openGenerate(ctx) });
-  api.commands.register({ id: "assistant", title: "AI: Assistant", run: () => {
+  const toggleAssistant = () => {
     if (assistantPanel?.isOpen()) { assistantPanel.close(); assistantPanel = null; return; }
     assistantPanel = openAssistant(ctx, assistant);
-  } });
+  };
+  // The plugin's cell in the status bar: "AI" when idle, the assistant's phase while it works, a click opens the panel.
+  ctx.presence = api.ui.statusItem({ text: "AI", title: "AI Assistant (Ctrl+Shift+A)", onClick: toggleAssistant });
+
+  api.commands.register({ id: "generate", title: "AI: Generate Map", run: () => openGenerate(ctx) });
+  api.commands.register({ id: "scenario", title: "AI: Make Scenario", run: (prompt?: unknown) => openScenario(ctx, typeof prompt === "string" ? prompt : undefined) });
+  api.commands.register({ id: "assistant", title: "AI: Assistant", run: toggleAssistant });
   api.commands.register({ id: "ask", title: "AI: Ask about this", run: (text?: unknown) => { showAssistant().ask(typeof text === "string" ? text : "", false); } });
   api.commands.register({ id: "settings", title: "AI: Settings", run: () => ctx.openSettings() });
 
   const menu = "Tools/AI" as const;
+  api.menu.add(menu, { label: "Make Scenario…", icon: "plugin", command: "scenario" });
   api.menu.add(menu, { label: "Generate Map…", icon: "plugin", command: "generate" });
   api.menu.add(menu, { label: "Redo Area…", icon: "plugin", enabled: open, run: () => void openRegion(ctx) });
   api.menu.add(menu, { label: "Write Triggers…", icon: "plugin", enabled: open, run: () => openTriggers(ctx) });
@@ -80,5 +89,8 @@ export default function activate(api: PluginApi) {
 
   api.hotkeys.add("Ctrl+Shift+A", { command: "assistant" });
 
-  return () => { assistantPanel?.close(); };
+  // The buttons inside the editor's own dialogs: Map Properties, the trigger editors, the String Editor, Player Settings, Mission Briefing.
+  installDialogSlots(ctx, { assistant: (text) => showAssistant().ask(text, false), explain: () => openExplain(ctx), triggers: () => openTriggers(ctx), strings: () => openStrings(ctx), briefing: () => openBriefing(ctx) });
+
+  return () => { assistantPanel?.close(); ctx.presence?.remove(); };
 }

@@ -27,6 +27,8 @@ export interface RunHooks {
   onThinking?: (text: string) => void;
   onProgress?: (elapsedMs: number) => void;
   onStart?: (model: string) => void;
+  /** The assistant committed to a tool call (`agent`): its name now, its arguments with the result. */
+  onToolUse?: (id: string, name: string) => void;
   signal?: AbortSignal;
 }
 
@@ -282,6 +284,7 @@ export class AiClient {
         case "progress": hooks.onProgress?.(ev.elapsedMs); break;
         case "thinking": hooks.onThinking?.(ev.text); break;
         case "delta": hooks.onDelta?.(ev.text); break;
+        case "tool_use": hooks.onToolUse?.(ev.id, ev.name); break;
         case "result": result = { output: ev.output, usage: ev.usage, remaining: ev.remaining }; break;
         case "error": throw new AiError(ev.error.code, ev.error.message, { retryAfterSec: ev.error.retryAfterSec });
         case "done": break;

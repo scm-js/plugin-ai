@@ -1,8 +1,8 @@
 {
   "name": "AI",
   "id": "ai",
-  "version": "0.3.2",
-  "description": "Tools that use a language model through an ai-server: a map laid out from a prompt, an area redone, triggers written and explained, names, briefings, a review of the map, string rewrites, and an assistant that reads and edits everything in the map with you — terrain, units, doodads, sprites, locations, fog, triggers, strings, the script, and every settings dialog.",
+  "version": "0.4.0",
+  "description": "Tools that use a language model through an ai-server: a whole scenario from a sentence (a madness map, an RPG, a tower defense — designed, then built step by step from a toolkit of trigger systems), a map laid out from a prompt, an area redone, triggers written and explained, names, briefings, a review of the map, string rewrites, and an assistant docked beside the map that reads and edits everything in it with you.",
   "author": "Jeany",
   "homepage": "https://github.com/scm-js/plugin-ai",
   "entry": "plugin.ts",

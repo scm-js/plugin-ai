@@ -102,8 +102,8 @@ function formatUsd(v) {
   if (v < 5e-3) return v === 0 ? "$0.00" : "<$0.01";
   return `$${v.toFixed(2)}`;
 }
-function formatTokens(n) {
-  return n >= 1e3 ? `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k` : String(n);
+function formatTokens(n2) {
+  return n2 >= 1e3 ? `${(n2 / 1e3).toFixed(n2 >= 1e4 ? 0 : 1)}k` : String(n2);
 }
 function formatUsage(u) {
   const secs = u.durationMs >= 1e3 ? `${Math.round(u.durationMs / 1e3)} s` : `${u.durationMs} ms`;
@@ -128,11 +128,11 @@ var AiClient = class {
     return url;
   }
   headers(json) {
-    const c = this.credentials();
+    const c2 = this.credentials();
     const h2 = { Accept: json ? "application/json" : "text/event-stream" };
-    const bearer = c.access === "account" ? c.session : c.access === "token" ? c.token : "";
+    const bearer = c2.access === "account" ? c2.session : c2.access === "token" ? c2.token : "";
     if (bearer.trim()) h2.Authorization = `Bearer ${bearer.trim()}`;
-    if (c.access === "key" && c.ownKey.trim()) h2["X-Anthropic-Key"] = c.ownKey.trim();
+    if (c2.access === "key" && c2.ownKey.trim()) h2["X-Anthropic-Key"] = c2.ownKey.trim();
     return h2;
   }
   /** One JSON POST under the base, with the credentials; errors as `AiError`. */
@@ -233,6 +233,9 @@ var AiClient = class {
           break;
         case "delta":
           hooks.onDelta?.(ev.text);
+          break;
+        case "tool_use":
+          hooks.onToolUse?.(ev.id, ev.name);
           break;
         case "result":
           result = { output: ev.output, usage: ev.usage, remaining: ev.remaining };
@@ -502,10 +505,10 @@ function unitLines(api) {
     const key = `${api.names.unit(u.unitId)}|${u.owner}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 80).map(([key, n]) => {
+  return [...counts.entries()].sort((a2, b) => b[1] - a2[1]).slice(0, 80).map(([key, n2]) => {
     const [name, owner] = key.split("|");
     const o = Number(owner);
-    return `${name} \xD7 ${n} (${o < 8 ? `Player ${o + 1}` : o === 11 ? "Neutral" : `owner ${o}`})`;
+    return `${name} \xD7 ${n2} (${o < 8 ? `Player ${o + 1}` : o === 11 ? "Neutral" : `owner ${o}`})`;
   });
 }
 function locationNames(api) {
@@ -560,8 +563,8 @@ function selectionLines(api) {
 }
 function viewLine(api) {
   const v = api.view.visible();
-  const c = api.view.cursorTile();
-  return `layer ${api.selection.layer()}; visible tiles ${Math.floor(v.x0)},${Math.floor(v.y0)} to ${Math.ceil(v.x1)},${Math.ceil(v.y1)} at zoom ${api.view.zoom().toFixed(2)}; cursor at ${c.x},${c.y}`;
+  const c2 = api.view.cursorTile();
+  return `layer ${api.selection.layer()}; visible tiles ${Math.floor(v.x0)},${Math.floor(v.y0)} to ${Math.ceil(v.x1)},${Math.ceil(v.y1)} at zoom ${api.view.zoom().toFixed(2)}; cursor at ${c2.x},${c2.y}`;
 }
 function historyLine(api) {
   const h2 = api.document.history();
@@ -592,12 +595,12 @@ function terrainVocab(api) {
   return api.terrain.types().map((t) => ({ id: t.id, name: t.name, height: t.height, buildable: t.buildable }));
 }
 function doodadCategoryNames(api) {
-  return api.palette.doodadCategories().map((c) => c.name);
+  return api.palette.doodadCategories().map((c2) => c2.name);
 }
 function unitNames(api) {
   const all = api.names.units().filter((u) => u.value < 228).map((u) => u.label);
   const first = ["Start Location", "Mineral Field (Type 1)", "Mineral Field (Type 2)", "Mineral Field (Type 3)", "Vespene Geyser"];
-  return [...first.filter((n) => all.includes(n)), ...all.filter((n) => !first.includes(n))];
+  return [...first.filter((n2) => all.includes(n2)), ...all.filter((n2) => !first.includes(n2))];
 }
 function unitIdByName(api, name) {
   const wanted = name.trim().toLowerCase();
@@ -619,6 +622,80 @@ function pixelsPerTileFor(w, h2, wanted, maxPixels = 2e6) {
   let ppt = wanted;
   while (ppt > 1 && w * ppt * h2 * ppt > maxPixels) ppt = ppt > 8 ? ppt / 2 : ppt - 1;
   return Math.max(1, Math.round(ppt));
+}
+
+// intent.ts
+var EMPTY = { rects: [], units: [], locations: [] };
+var n = (v, d = NaN) => typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Number(v) : d;
+var ints = (v) => Array.isArray(v) ? v.map((x) => Math.round(n(x))).filter((x) => Number.isInteger(x) && x >= 0) : [];
+function rectOf(input, width, height, whole) {
+  const has = ["x0", "y0", "x1", "y1"].some((k) => input[k] !== void 0);
+  if (!has) return whole ? [{ x0: 0, y0: 0, x1: width, y1: height }] : [];
+  const x0 = Math.max(0, Math.min(width, Math.round(n(input.x0, 0)))), y0 = Math.max(0, Math.min(height, Math.round(n(input.y0, 0))));
+  const x1 = Math.max(x0, Math.min(width, Math.round(n(input.x1, width)))), y1 = Math.max(y0, Math.min(height, Math.round(n(input.y1, height))));
+  return x1 > x0 && y1 > y0 ? [{ x0, y0, x1, y1 }] : [];
+}
+function tilesOf(list2, width, height) {
+  if (!Array.isArray(list2)) return [];
+  const out = [];
+  for (const e of list2) {
+    if (!e || typeof e !== "object") continue;
+    const x = Math.round(n(e.x)), y = Math.round(n(e.y));
+    if (Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < width && y < height) out.push({ x0: x, y0: y, x1: x + 1, y1: y + 1 });
+  }
+  return out;
+}
+function footprintOf(api, name, input) {
+  const info = api.document.info();
+  if (!info) return EMPTY;
+  const { width, height } = info;
+  switch (name) {
+    case "paint_terrain":
+    case "set_fog":
+    case "scatter_doodads":
+      return { ...EMPTY, rects: rectOf(input, width, height, false) };
+    case "screenshot":
+    case "terrain_at":
+    case "fog_at":
+    case "list_doodads":
+    case "list_sprites":
+      return { ...EMPTY, rects: rectOf(input, width, height, name === "screenshot") };
+    case "place_units":
+      return { ...EMPTY, rects: tilesOf(input.units, width, height) };
+    case "place_doodads":
+      return { ...EMPTY, rects: tilesOf(input.doodads, width, height) };
+    case "place_sprites":
+      return { ...EMPTY, rects: tilesOf(input.sprites, width, height) };
+    case "move_units": {
+      const moves = Array.isArray(input.moves) ? input.moves : [];
+      return { ...EMPTY, rects: tilesOf(moves, width, height), units: ints(moves.map((m) => m.index)) };
+    }
+    case "remove_units":
+    case "update_units":
+      return { ...EMPTY, units: ints(input.indices) };
+    case "add_location":
+      return { ...EMPTY, rects: rectOf(input, width, height, false) };
+    case "edit_location": {
+      const index = Math.round(n(input.index));
+      return { ...EMPTY, rects: rectOf(input, width, height, false), locations: Number.isInteger(index) && index >= 0 ? [index] : [] };
+    }
+    case "remove_locations":
+      return { ...EMPTY, locations: ints(input.indices) };
+    case "go_to": {
+      const x = n(input.x), y = n(input.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) return { ...EMPTY, rects: tilesOf([{ x, y }], width, height) };
+      const unit = n(input.unit), location = n(input.location);
+      return { ...EMPTY, units: Number.isFinite(unit) ? [unit] : [], locations: Number.isFinite(location) ? [location] : [] };
+    }
+    case "select": {
+      return { ...EMPTY, rects: rectOf(input, width, height, false), units: ints(input.units), locations: ints(input.locations) };
+    }
+    default:
+      return EMPTY;
+  }
+}
+function footprintEmpty(f) {
+  return f.rects.length === 0 && f.units.length === 0 && f.locations.length === 0;
 }
 
 // markdown.ts
@@ -689,12 +766,12 @@ function parseBlocks(md) {
     if (/^>\s?/.test(line)) {
       flushPara(para);
       para = [];
-      const q = [];
+      const q2 = [];
       while (i < lines.length && /^>\s?/.test(lines[i])) {
-        q.push(lines[i].replace(/^>\s?/, ""));
+        q2.push(lines[i].replace(/^>\s?/, ""));
         i++;
       }
-      out.push({ kind: "quote", text: q.join(" ") });
+      out.push({ kind: "quote", text: q2.join(" ") });
       continue;
     }
     if (line.trim() === "") {
@@ -821,9 +898,9 @@ function renderMarkdown(md) {
         break;
       }
       case "quote": {
-        const q = document.createElement("blockquote");
-        q.append(...spanNodes(parseSpans(b.text)));
-        root.append(q);
+        const q2 = document.createElement("blockquote");
+        q2.append(...spanNodes(parseSpans(b.text)));
+        root.append(q2);
         break;
       }
     }
@@ -886,7 +963,7 @@ function gatherReference(api) {
       weapons: d.weapons.map((w) => `${w.name} ${w.damage}${w.bonus ? `+${w.bonus}` : ""}`).join("; ")
     });
   }
-  const sig = (name, args) => ({ name, args: args.map((a) => ({ label: a.label, kind: a.kind })) });
+  const sig = (name, args) => ({ name, args: args.map((a2) => ({ label: a2.label, kind: a2.kind })) });
   return {
     mapName: info?.name ?? "",
     width: info?.width ?? 0,
@@ -894,15 +971,15 @@ function gatherReference(api) {
     tileset: api.tileset.name(),
     versionLabel: api.settings.version()?.label ?? "",
     terrains: api.terrain.types().map((t) => ({ id: t.id, name: t.name, height: t.height, buildable: t.buildable })),
-    doodadCategories: api.palette.doodadCategories().map((c) => ({ name: c.name, doodads: c.doodads.map((d) => ({ id: d.id, name: d.name, width: d.width, height: d.height })) })),
+    doodadCategories: api.palette.doodadCategories().map((c2) => ({ name: c2.name, doodads: c2.doodads.map((d) => ({ id: d.id, name: d.name, width: d.width, height: d.height })) })),
     units,
     upgrades: api.names.upgrades().map((u) => ({ id: u.value, name: u.label })),
     techs: api.names.techs().map((t) => ({ id: t.value, name: t.label })),
-    conditions: defs.conditions().map((c) => sig(c.name, c.args)),
-    actions: defs.actions(false).map((a) => sig(a.name, a.args)),
-    briefingActions: defs.actions(true).map((a) => sig(a.name, a.args)),
-    choices: ENUM_KINDS.map((kind) => ({ kind, labels: defs.choices(kind).map((c) => c.label) })),
-    aiScripts: defs.choices("aiScript").map((c) => c.label),
+    conditions: defs.conditions().map((c2) => sig(c2.name, c2.args)),
+    actions: defs.actions(false).map((a2) => sig(a2.name, a2.args)),
+    briefingActions: defs.actions(true).map((a2) => sig(a2.name, a2.args)),
+    choices: ENUM_KINDS.map((kind) => ({ kind, labels: defs.choices(kind).map((c2) => c2.label) })),
+    aiScripts: defs.choices("aiScript").map((c2) => c2.label),
     sprites: api.palette.spriteGroups().map((g) => ({ label: g.label, count: g.ids.length })),
     hasScript: !!scriptBridge(api)?.state()?.source
   };
@@ -941,9 +1018,9 @@ function buildReference(p) {
   for (const t of p.terrains) out.push(`- ${t.id}: ${t.name} \u2014 height ${t.height}${t.buildable ? ", buildable" : ", not buildable"}`);
   out.push("");
   out.push("## Doodads (place_doodads takes a name or id; scatter_doodads takes a category)");
-  for (const c of p.doodadCategories) {
-    const names = c.doodads.slice(0, 60).map((d) => `${d.name} ${d.width}\xD7${d.height}`);
-    out.push(`- ${c.name} (${c.doodads.length}): ${names.join(", ")}${c.doodads.length > 60 ? ", \u2026" : ""}`);
+  for (const c2 of p.doodadCategories) {
+    const names = c2.doodads.slice(0, 60).map((d) => `${d.name} ${d.width}\xD7${d.height}`);
+    out.push(`- ${c2.name} (${c2.doodads.length}): ${names.join(", ")}${c2.doodads.length > 60 ? ", \u2026" : ""}`);
   }
   if (p.sprites.length) out.push(`- Pure sprites (place_sprites kind "pure"): ${p.sprites.map((g) => `${g.label} (${g.count})`).join(", ")}`);
   out.push("");
@@ -960,16 +1037,16 @@ function buildReference(p) {
   out.push(p.techs.map((t) => `${t.id} ${t.name}`).join("; "));
   out.push("");
   out.push("## Trigger conditions (name(argument: kind, \u2026))");
-  for (const c of p.conditions) out.push(`- ${c.name}(${c.args.map((a) => `${a.label}: ${a.kind}`).join(", ")})`);
+  for (const c2 of p.conditions) out.push(`- ${c2.name}(${c2.args.map((a2) => `${a2.label}: ${a2.kind}`).join(", ")})`);
   out.push("");
   out.push("## Trigger actions");
-  for (const a of p.actions) out.push(`- ${a.name}(${a.args.map((x) => `${x.label}: ${x.kind}`).join(", ")})`);
+  for (const a2 of p.actions) out.push(`- ${a2.name}(${a2.args.map((x) => `${x.label}: ${x.kind}`).join(", ")})`);
   out.push("");
   out.push("## Briefing actions");
-  for (const a of p.briefingActions) out.push(`- ${a.name}(${a.args.map((x) => `${x.label}: ${x.kind}`).join(", ")})`);
+  for (const a2 of p.briefingActions) out.push(`- ${a2.name}(${a2.args.map((x) => `${x.label}: ${x.kind}`).join(", ")})`);
   out.push("");
   out.push("## Argument values by kind");
-  for (const c of p.choices) if (c.labels.length) out.push(`- ${c.kind}: ${c.labels.join(", ")}`);
+  for (const c2 of p.choices) if (c2.labels.length) out.push(`- ${c2.kind}: ${c2.labels.join(", ")}`);
   out.push("- unit: a unit name from the table above, or the groups Any unit, Men, Buildings, Factories");
   out.push('- location: a location name of this map (list_locations); switch: a switch name or "Switch N" (1-based); text / wav: a string; number / amount / count / duration / percent: an integer (duration in milliseconds, 1000 per second at Fastest is about 24 frames)');
   if (p.aiScripts.length) {
@@ -1009,8 +1086,8 @@ var num = (v, d = 0) => typeof v === "number" && Number.isFinite(v) ? v : typeof
 var str = (v, d = "") => typeof v === "string" ? v : typeof v === "number" ? String(v) : d;
 var bool = (v) => typeof v === "boolean" ? v : typeof v === "string" && /^(true|yes|on)$/i.test(v) ? true : typeof v === "string" && /^(false|no|off)$/i.test(v) ? false : void 0;
 var list = (v) => Array.isArray(v) ? v : [];
-var ints = (v) => list(v).map((x) => Math.round(num(x, -1))).filter((x) => x >= 0);
-function rectOf(input, api) {
+var ints2 = (v) => list(v).map((x) => Math.round(num(x, -1))).filter((x) => x >= 0);
+function rectOf2(input, api) {
   const info = api.document.info();
   const W = info?.width ?? 0, H = info?.height ?? 0;
   const x0 = Math.max(0, Math.min(W, Math.round(num(input.x0)))), y0 = Math.max(0, Math.min(H, Math.round(num(input.y0))));
@@ -1030,15 +1107,15 @@ function ownerName(o) {
 }
 function ownerOf(v, d = 11) {
   if (typeof v === "string" && /neutral/i.test(v)) return 11;
-  const n = num(v, d + 1);
-  if (n >= 12) return 11;
-  return Math.max(0, Math.round(n) - 1);
+  const n2 = num(v, d + 1);
+  if (n2 >= 12) return 11;
+  return Math.max(0, Math.round(n2) - 1);
 }
 function slotOf(v) {
   if (v === void 0 || v === null) return null;
   if (typeof v === "string" && /^default$/i.test(v.trim())) return "default";
-  const n = Math.round(num(v, -1));
-  return n >= 1 && n <= 12 ? n - 1 : null;
+  const n2 = Math.round(num(v, -1));
+  return n2 >= 1 && n2 <= 12 ? n2 - 1 : null;
 }
 function byName(items, name) {
   const wanted = name.trim().toLowerCase();
@@ -1084,13 +1161,13 @@ function techIdByName(api, name) {
 }
 function doodadByName(api, name) {
   const wanted = name.trim().toLowerCase();
-  const all = api.palette.doodadCategories().flatMap((c) => c.doodads);
+  const all = api.palette.doodadCategories().flatMap((c2) => c2.doodads);
   if (/^\d+$/.test(wanted)) return all.find((d) => d.id === Number(wanted)) ?? null;
   const exact = all.find((d) => d.name.toLowerCase() === wanted);
   if (exact) return exact;
   const within = all.filter((d) => d.name.toLowerCase().includes(wanted));
   if (within.length) return within[Math.floor(Math.random() * within.length)];
-  const cat = api.palette.doodadCategories().find((c) => c.name.toLowerCase() === wanted || c.name.toLowerCase().includes(wanted));
+  const cat = api.palette.doodadCategories().find((c2) => c2.name.toLowerCase() === wanted || c2.name.toLowerCase().includes(wanted));
   return cat && cat.doodads.length ? cat.doodads[Math.floor(Math.random() * cat.doodads.length)] : null;
 }
 function spriteByName(api, kind, name) {
@@ -1107,7 +1184,7 @@ function colorIndexOf(v) {
   const s = str(v).trim().toLowerCase();
   if (!s) return null;
   if (/^\d+$/.test(s)) return Number(s);
-  const i = PLAYER_COLOR_NAMES.findIndex((n) => n.toLowerCase() === s);
+  const i = PLAYER_COLOR_NAMES.findIndex((n2) => n2.toLowerCase() === s);
   return i >= 0 ? i : null;
 }
 function toContent(toolUseId, result, isError = false) {
@@ -1126,23 +1203,23 @@ function summarizeResult(result) {
   const line = text.split("\n")[0];
   return line.length > 160 ? `${line.slice(0, 160)}\u2026` : line;
 }
-var plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+var plural = (n2, word) => `${n2} ${word}${n2 === 1 ? "" : "s"}`;
 
 // tools/objects.ts
-var STATE_BITS = (c) => [
-  ["cloaked", c.unit.state.Cloaked, c.unit.valid.Cloak],
-  ["burrowed", c.unit.state.Burrowed, c.unit.valid.Burrow],
-  ["inTransit", c.unit.state.InTransit, c.unit.valid.InTransit],
-  ["hallucinated", c.unit.state.Hallucinated, c.unit.valid.Hallucinated],
-  ["invincible", c.unit.state.Invincible, c.unit.valid.Invincible]
+var STATE_BITS = (c2) => [
+  ["cloaked", c2.unit.state.Cloaked, c2.unit.valid.Cloak],
+  ["burrowed", c2.unit.state.Burrowed, c2.unit.valid.Burrow],
+  ["inTransit", c2.unit.state.InTransit, c2.unit.valid.InTransit],
+  ["hallucinated", c2.unit.state.Hallucinated, c2.unit.valid.Hallucinated],
+  ["invincible", c2.unit.state.Invincible, c2.unit.valid.Invincible]
 ];
-var ELEVATION_BITS = (c) => [
-  ["excludeLowGround", c.location.elevation.LowGround],
-  ["excludeMediumGround", c.location.elevation.MediumGround],
-  ["excludeHighGround", c.location.elevation.HighGround],
-  ["excludeLowAir", c.location.elevation.LowAir],
-  ["excludeMediumAir", c.location.elevation.MediumAir],
-  ["excludeHighAir", c.location.elevation.HighAir]
+var ELEVATION_BITS = (c2) => [
+  ["excludeLowGround", c2.location.elevation.LowGround],
+  ["excludeMediumGround", c2.location.elevation.MediumGround],
+  ["excludeHighGround", c2.location.elevation.HighGround],
+  ["excludeLowAir", c2.location.elevation.LowAir],
+  ["excludeMediumAir", c2.location.elevation.MediumAir],
+  ["excludeHighAir", c2.location.elevation.HighAir]
 ];
 function objectTools() {
   return [
@@ -1179,7 +1256,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const r = api.document.edit("AI: remove units", (tx) => {
-          tx.removeUnits(ints(input.indices));
+          tx.removeUnits(ints2(input.indices));
         });
         return `Removed ${plural(r.units, "unit")}.`;
       }
@@ -1188,27 +1265,27 @@ function objectTools() {
       def: { name: "move_units", description: "Move units by index to new tile centres. One undo step.", inputSchema: obj({ moves: { type: "array", items: obj({ index: { type: "integer" }, x: { type: "integer" }, y: { type: "integer" } }, ["index", "x", "y"]) } }, ["moves"]) },
       writes: true,
       run: (input, { api }) => {
-        let n = 0;
+        let n2 = 0;
         api.document.edit("AI: move units", (tx) => {
           for (const m of list(input.moves)) {
             const index = num(m.index, -1);
             if (index < 0 || index >= tx.scenario.units.length) continue;
-            n += tx.updateUnits([index], () => ({ x: num(m.x) * TILE + TILE / 2, y: num(m.y) * TILE + TILE / 2 }));
+            n2 += tx.updateUnits([index], () => ({ x: num(m.x) * TILE + TILE / 2, y: num(m.y) * TILE + TILE / 2 }));
           }
         });
-        return `Moved ${plural(n, "unit")}.`;
+        return `Moved ${plural(n2, "unit")}.`;
       }
     },
     {
       def: { name: "update_units", description: "Change fields of existing units by index (Unit Properties): owner (1-based player), hitPoints / shields / energy as percent, resources (minerals or gas in a field), hangar (interceptors / scarabs), and the flags cloaked, burrowed, inTransit (lifted off), hallucinated, invincible. Only the fields given change. One undo step.", inputSchema: obj({ indices: { type: "array", items: { type: "integer" } }, owner: { type: "integer" }, hitPoints: { type: "integer" }, shields: { type: "integer" }, energy: { type: "integer" }, resources: { type: "integer" }, hangar: { type: "integer" }, cloaked: { type: "boolean" }, burrowed: { type: "boolean" }, inTransit: { type: "boolean" }, hallucinated: { type: "boolean" }, invincible: { type: "boolean" } }, ["indices"]) },
       writes: true,
       run: (input, { api }) => {
-        const indices = ints(input.indices);
+        const indices = ints2(input.indices);
         const used0 = api.consts.unit.used;
         const pct = (v) => Math.max(0, Math.min(100, Math.round(num(v))));
-        let n = 0;
+        let n2 = 0;
         api.document.edit("AI: unit properties", (tx) => {
-          n = tx.updateUnits(indices, (rec) => {
+          n2 = tx.updateUnits(indices, (rec) => {
             const patch = {};
             let used = rec.validStates;
             let flags = rec.stateFlags;
@@ -1247,7 +1324,7 @@ function objectTools() {
             return { ...patch, validStates: used, stateFlags: flags, validProperties: valid };
           });
         });
-        return `Updated ${plural(n, "unit")}.`;
+        return `Updated ${plural(n2, "unit")}.`;
       }
     },
     {
@@ -1276,7 +1353,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const r = api.document.edit("AI: remove doodads", (tx) => {
-          tx.removeDoodads(ints(input.indices));
+          tx.removeDoodads(ints2(input.indices));
         });
         return `Removed ${plural(r.doodads, "doodad")}.`;
       }
@@ -1285,8 +1362,8 @@ function objectTools() {
       def: { name: "scatter_doodads", description: "Scatter doodads of a category over a tile rect at a density 0\u20131, skipping spots that do not fit. One undo step.", inputSchema: obj({ category: { type: "string" }, ...rectSchema, density: { type: "number" } }, ["category", "x0", "y0", "x1", "y1"]) },
       writes: true,
       run: (input, { api }) => {
-        const rect = rectOf(input, api);
-        const cat = api.palette.doodadCategories().find((c) => c.name.toLowerCase() === str(input.category).toLowerCase()) ?? api.palette.doodadCategories().find((c) => c.name.toLowerCase().includes(str(input.category).toLowerCase()));
+        const rect = rectOf2(input, api);
+        const cat = api.palette.doodadCategories().find((c2) => c2.name.toLowerCase() === str(input.category).toLowerCase()) ?? api.palette.doodadCategories().find((c2) => c2.name.toLowerCase().includes(str(input.category).toLowerCase()));
         if (!cat || cat.doodads.length === 0) return `No doodad category called "${str(input.category)}"; call list_doodad_categories.`;
         const density = Math.max(0, Math.min(1, num(input.density, 0.3)));
         const want = Math.round(density * ((rect.x1 - rect.x0) * (rect.y1 - rect.y0)) / 12);
@@ -1328,7 +1405,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const r = api.document.edit("AI: remove sprites", (tx) => {
-          tx.removeSprites(ints(input.indices));
+          tx.removeSprites(ints2(input.indices));
         });
         return `Removed ${plural(r.sprites, "sprite")}.`;
       }
@@ -1337,7 +1414,7 @@ function objectTools() {
       def: { name: "add_location", description: "Add a named location over a tile rect. One undo step.", inputSchema: obj({ name: { type: "string" }, ...rectSchema }, ["name", "x0", "y0", "x1", "y1"]) },
       writes: true,
       run: (input, { api }) => {
-        const rect = rectOf(input, api);
+        const rect = rectOf2(input, api);
         let index = -1;
         api.document.edit(`AI: location ${str(input.name)}`, (tx) => {
           index = tx.addLocation({ left: rect.x0 * TILE, top: rect.y0 * TILE, right: rect.x1 * TILE, bottom: rect.y1 * TILE }, str(input.name, "Location"));
@@ -1355,7 +1432,7 @@ function objectTools() {
         const patch = {};
         if (typeof input.name === "string") patch.name = input.name;
         if (input.x0 !== void 0 && input.x1 !== void 0) {
-          const r = rectOf(input, api);
+          const r = rectOf2(input, api);
           Object.assign(patch, { left: r.x0 * TILE, top: r.y0 * TILE, right: r.x1 * TILE, bottom: r.y1 * TILE });
         }
         const bits = ELEVATION_BITS(api.consts);
@@ -1379,7 +1456,7 @@ function objectTools() {
       writes: true,
       run: (input, { api }) => {
         const r = api.document.edit("AI: remove locations", (tx) => {
-          tx.removeLocations(ints(input.indices).filter((i) => i !== api.consts.location.anywhere));
+          tx.removeLocations(ints2(input.indices).filter((i) => i !== api.consts.location.anywhere));
         });
         return `Removed ${plural(r.locations, "location")}.`;
       }
@@ -1388,8 +1465,8 @@ function objectTools() {
       def: { name: "set_fog", description: 'Fog of war over a tile rect for 1-based players: mode "fog" (starts unexplored) or "clear". One undo step.', inputSchema: obj({ ...rectSchema, players: { type: "array", items: { type: "integer" } }, mode: { type: "string", enum: ["fog", "clear"] } }, ["x0", "y0", "x1", "y1", "players", "mode"]) },
       writes: true,
       run: (input, { api }) => {
-        const rect = rectOf(input, api);
-        const players2 = ints(input.players).filter((p) => p >= 1 && p <= 8);
+        const rect = rectOf2(input, api);
+        const players2 = ints2(input.players).filter((p) => p >= 1 && p <= 8);
         const mask = players2.reduce((m, p) => m | 1 << p - 1, 0);
         const r = api.document.edit("AI: fog of war", (tx) => {
           tx.setFog(rect, mask, str(input.mode) === "clear" ? "clear" : "fog");
@@ -1411,7 +1488,7 @@ function assignLegend(ranked) {
   return legend;
 }
 function rankByCount(counts) {
-  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]).map(([id]) => id);
+  return [...counts.entries()].sort((a2, b) => b[1] - a2[1] || a2[0] - b[0]).map(([id]) => id);
 }
 function sampleGrid(terrainAt, rect, cellSize) {
   const columns = Math.max(1, Math.ceil((rect.x1 - rect.x0) / cellSize));
@@ -1433,9 +1510,9 @@ function sampleGrid(terrainAt, rect, cellSize) {
       }
       let best = null;
       let bestN = 0;
-      for (const [id, n] of votes) if (n > bestN) {
+      for (const [id, n2] of votes) if (n2 > bestN) {
         best = id;
-        bestN = n;
+        bestN = n2;
       }
       cells[cy * columns + cx] = best;
       if (best !== null) counts.set(best, (counts.get(best) ?? 0) + 1);
@@ -1477,15 +1554,15 @@ function diamondTerrain(terrainAt, tx, ty) {
   }
   let best = null;
   let bestN = 0;
-  for (const [id, n] of counts) if (n > bestN) {
+  for (const [id, n2] of counts) if (n2 > bestN) {
     best = id;
-    bestN = n;
+    bestN = n2;
   }
   return best;
 }
 function paintOrder(ids, terrains, counts) {
   const height = (id) => terrains.find((t) => t.id === id)?.height ?? 0;
-  return [...ids].sort((a, b) => height(a) - height(b) || (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a - b);
+  return [...ids].sort((a2, b) => height(a2) - height(b) || (counts.get(b) ?? 0) - (counts.get(a2) ?? 0) || a2 - b);
 }
 
 // layout.ts
@@ -1499,12 +1576,12 @@ var VESPENE_GEYSER = 188;
 var NEUTRAL = 11;
 var DEFAULT_MINERALS = 1500;
 var DEFAULT_GAS = 5e3;
-function overlaps(a, b) {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+function overlaps(a2, b) {
+  return a2.x < b.x + b.w && b.x < a2.x + a2.w && a2.y < b.y + b.h && b.y < a2.y + a2.h;
 }
-function chebGap(a, b) {
-  const gx = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
-  const gy = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+function chebGap(a2, b) {
+  const gx = Math.max(b.x - (a2.x + a2.w), a2.x - (b.x + b.w));
+  const gy = Math.max(b.y - (a2.y + a2.h), a2.y - (b.y + b.h));
   if (gx < 0 && gy < 0) return -1;
   return Math.max(gx, gy);
 }
@@ -1512,25 +1589,25 @@ function centreOf(r) {
   return { x: (r.x + r.w / 2) * TILE2, y: (r.y + r.h / 2) * TILE2 };
 }
 function rectAt(px, py, size, toward) {
-  const axis = (p, n, c) => {
-    const v = p / TILE2 - n / 2;
-    if (c === void 0 || Math.abs(v - Math.floor(v) - 0.5) > 1e-9) return Math.round(v);
+  const axis = (p, n2, c2) => {
+    const v = p / TILE2 - n2 / 2;
+    if (c2 === void 0 || Math.abs(v - Math.floor(v) - 0.5) > 1e-9) return Math.round(v);
     const lo = Math.floor(v);
     const hi = lo + 1;
-    return Math.abs((lo + n / 2) * TILE2 - c) <= Math.abs((hi + n / 2) * TILE2 - c) ? lo : hi;
+    return Math.abs((lo + n2 / 2) * TILE2 - c2) <= Math.abs((hi + n2 / 2) * TILE2 - c2) ? lo : hi;
   };
   return { x: axis(px, size.w, toward?.x), y: axis(py, size.h, toward?.y), w: size.w, h: size.h };
 }
-function angleDiff(a, b) {
-  let d = a - b;
+function angleDiff(a2, b) {
+  let d = a2 - b;
   while (d <= -Math.PI) d += Math.PI * 2;
   while (d > Math.PI) d -= Math.PI * 2;
   return d;
 }
 function angleOf(hall, r) {
   const h2 = centreOf(hall);
-  const c = centreOf(r);
-  return Math.atan2(c.y - h2.y, c.x - h2.x);
+  const c2 = centreOf(r);
+  return Math.atan2(c2.y - h2.y, c2.x - h2.x);
 }
 function ringPositions(hall, size, gap) {
   const out = [];
@@ -1540,36 +1617,36 @@ function ringPositions(hall, size, gap) {
       if (chebGap(r, hall) === gap) out.push(r);
     }
   }
-  return out.sort((a, b) => angleOf(hall, a) - angleOf(hall, b));
+  return out.sort((a2, b) => angleOf(hall, a2) - angleOf(hall, b));
 }
 var DEFAULT_SPEC = { minerals: 8, geysers: 1, gap: 3, geyserGap: 3, geyserSpacing: 1, geyserSide: "auto", direction: Math.PI };
 function layoutBase(hall, spec) {
   const ring = ringPositions(hall, MINERAL, spec.gap);
-  const n = ring.length;
+  const n2 = ring.length;
   const minerals = [];
   const short = { minerals: 0, geysers: 0 };
   let leftEnd = spec.direction;
   let rightEnd = spec.direction;
-  if (n > 0 && spec.minerals > 0) {
+  if (n2 > 0 && spec.minerals > 0) {
     const angles = ring.map((r) => angleOf(hall, r));
     let i0 = 0;
-    for (let i = 1; i < n; i++) if (Math.abs(angleDiff(angles[i], spec.direction)) < Math.abs(angleDiff(angles[i0], spec.direction))) i0 = i;
+    for (let i = 1; i < n2; i++) if (Math.abs(angleDiff(angles[i], spec.direction)) < Math.abs(angleDiff(angles[i0], spec.direction))) i0 = i;
     const used = /* @__PURE__ */ new Set([i0]);
     minerals.push(ring[i0]);
     const free = (i) => minerals.every((m) => !overlaps(m, ring[i]));
     let left = i0;
     let right = i0;
     const nextLeft = () => {
-      for (let k = 1; k < n; k++) {
-        const i = (left - k + n) % n;
+      for (let k = 1; k < n2; k++) {
+        const i = (left - k + n2) % n2;
         if (used.has(i)) return -1;
         if (free(i)) return i;
       }
       return -1;
     };
     const nextRight = () => {
-      for (let k = 1; k < n; k++) {
-        const i = (right + k) % n;
+      for (let k = 1; k < n2; k++) {
+        const i = (right + k) % n2;
         if (used.has(i)) return -1;
         if (free(i)) return i;
       }
@@ -1681,9 +1758,9 @@ function symmetryImages(mode, W, H) {
   }
 }
 function rectImages(r, images, toward) {
-  const c = centreOf(r);
+  const c2 = centreOf(r);
   return images.map((f) => {
-    const p = f(c);
+    const p = f(c2);
     return rectAt(p.x, p.y, { w: r.w, h: r.h }, toward);
   });
 }
@@ -1718,9 +1795,9 @@ function checkPlan(input, ctx) {
   for (const row of plan.grid) for (const ch of row) if (plan.legend[ch] !== void 0) counts.set(ch, (counts.get(ch) ?? 0) + 1);
   let filler = UNKNOWN;
   let fillerN = 0;
-  for (const [ch, n] of counts) if (n > fillerN) {
+  for (const [ch, n2] of counts) if (n2 > fillerN) {
     filler = ch;
-    fillerN = n;
+    fillerN = n2;
   }
   if (filler === UNKNOWN) {
     const first = Object.keys(plan.legend)[0];
@@ -1833,13 +1910,13 @@ function enforceSymmetry(plan, width, height) {
     for (let cx = 0; cx < plan.columns; cx++) {
       const key = cy * plan.columns + cx;
       if (seen.has(key)) continue;
-      const cells = images.map((f) => imageCell(f, cx, cy, plan.cellSize)).filter((c) => c.x >= 0 && c.y >= 0 && c.x < plan.columns && c.y < plan.rows);
+      const cells = images.map((f) => imageCell(f, cx, cy, plan.cellSize)).filter((c2) => c2.x >= 0 && c2.y >= 0 && c2.x < plan.columns && c2.y < plan.rows);
       let canon = cells[0];
-      for (const c of cells) if (c.y < canon.y || c.y === canon.y && c.x < canon.x) canon = c;
+      for (const c2 of cells) if (c2.y < canon.y || c2.y === canon.y && c2.x < canon.x) canon = c2;
       const ch = grid[canon.y][canon.x];
-      for (const c of cells) {
-        grid[c.y][c.x] = ch;
-        seen.add(c.y * plan.columns + c.x);
+      for (const c2 of cells) {
+        grid[c2.y][c2.x] = ch;
+        seen.add(c2.y * plan.columns + c2.x);
       }
     }
   }
@@ -1853,27 +1930,27 @@ function placeBases(bases, mode, width, height) {
   const used = /* @__PURE__ */ new Set();
   for (const b of bases) {
     const hall = { x: b.x, y: b.y, w: HALL.w, h: HALL.h };
-    const c = centreOf(hall);
+    const c2 = centreOf(hall);
     const angle = directionAngle(b.mineralDirection);
     images.forEach((f, image) => {
       const hallImage = rectImages(hall, [f], toward)[0];
       let direction = angle;
       if (image > 0) {
-        const o = f(c);
-        const d = f({ x: c.x + 100 * Math.cos(angle), y: c.y + 100 * Math.sin(angle) });
+        const o = f(c2);
+        const d = f({ x: c2.x + 100 * Math.cos(angle), y: c2.y + 100 * Math.sin(angle) });
         direction = Math.atan2(d.y - o.y, d.x - o.x);
       }
       const layout = layoutBase(hallImage, { ...DEFAULT_SPEC, minerals: b.minerals, geysers: b.geysers, direction });
-      let player = null;
+      let player2 = null;
       if (b.kind === "main") {
-        if (images.length === 1 && b.player && !used.has(b.player)) player = b.player;
+        if (images.length === 1 && b.player && !used.has(b.player)) player2 = b.player;
         else {
           while (used.has(nextPlayer)) nextPlayer++;
-          player = nextPlayer;
+          player2 = nextPlayer;
         }
-        used.add(player);
+        used.add(player2);
       }
-      out.push({ kind: b.kind, hall: hallImage, direction, minerals: b.minerals, geysers: b.geysers, player, image, layout });
+      out.push({ kind: b.kind, hall: hallImage, direction, minerals: b.minerals, geysers: b.geysers, player: player2, image, layout });
     });
   }
   return out;
@@ -1916,14 +1993,14 @@ function chooseRamp(direction, x, y, ramps) {
     const shape = vertical ? ratio < 1 ? 0 : 2 : horizontal ? ratio > 1 ? 0 : 2 : Math.abs(ratio - 1) < 0.34 ? 0 : 1;
     return shape * 100 + Math.abs(d.width * d.height - 24);
   };
-  const best = [...ramps].sort((a, b) => score(a) - score(b))[0];
+  const best = [...ramps].sort((a2, b) => score(a2) - score(b))[0];
   return { doodadId: best.id, tx: Math.round(x - best.width / 2), ty: Math.round(y - best.height / 2), name: best.name, width: best.width, height: best.height };
 }
 function prng(seed) {
-  let a = seed >>> 0;
+  let a2 = seed >>> 0;
   return () => {
-    a = a + 1831565813 >>> 0;
-    let t = a;
+    a2 = a2 + 1831565813 >>> 0;
+    let t = a2;
     t = Math.imul(t ^ t >>> 15, t | 1);
     t ^= t + Math.imul(t ^ t >>> 7, t | 61);
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
@@ -1942,7 +2019,7 @@ function scatterDoodads(plan, ctx, categories, occupied) {
   const taken = [];
   const problems = [];
   const random = prng(hashString(plan.grid.join("\n")));
-  const overlaps2 = (a, b) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const overlaps2 = (a2, b) => a2.x0 < b.x1 && b.x0 < a2.x1 && a2.y0 < b.y1 && b.y0 < a2.y1;
   for (const entry of plan.doodads) {
     const key = [...categories.keys()].find((k) => k.toLowerCase() === entry.category.toLowerCase());
     const choices = key ? categories.get(key) : [];
@@ -2001,7 +2078,7 @@ function planRect(plan, originX, originY, width, height) {
 }
 function doodadChoices(api) {
   const out = /* @__PURE__ */ new Map();
-  for (const c of api.palette.doodadCategories()) out.set(c.name, c.doodads.map((d) => ({ id: d.id, name: d.name, category: c.name, width: d.width, height: d.height })));
+  for (const c2 of api.palette.doodadCategories()) out.set(c2.name, c2.doodads.map((d) => ({ id: d.id, name: d.name, category: c2.name, width: d.width, height: d.height })));
   return out;
 }
 function renderPlan(api, input, options) {
@@ -2056,12 +2133,12 @@ function renderPlan(api, input, options) {
     const bases = placeBases(plan.bases, symmetry, info.width, info.height);
     for (const b of bases) {
       occupied.push(baseFootprint(b));
-      const c = centreOf(b.hall);
+      const c2 = centreOf(b.hall);
       if (b.player !== null) {
-        if (tx.canPlaceUnit(START_LOCATION, c.x, c.y)) {
-          tx.placeUnit(START_LOCATION, b.player - 1, c.x, c.y);
+        if (tx.canPlaceUnit(START_LOCATION, c2.x, c2.y)) {
+          tx.placeUnit(START_LOCATION, b.player - 1, c2.x, c2.y);
           placed.starts++;
-        } else findings.push(`player ${b.player}'s start location at ${b.hall.x},${b.hall.y} is refused there (${describePlacement(api, START_LOCATION, c.x, c.y)})`);
+        } else findings.push(`player ${b.player}'s start location at ${b.hall.x},${b.hall.y} is refused there (${describePlacement(api, START_LOCATION, c2.x, c2.y)})`);
       }
       let refusedHere = 0;
       b.layout.minerals.forEach((r, i) => {
@@ -2130,7 +2207,7 @@ function renderPlan(api, input, options) {
       else placed.locations++;
     }
   });
-  findings.push(...result.notes.filter((n) => !findings.includes(n)));
+  findings.push(...result.notes.filter((n2) => !findings.includes(n2)));
   for (const issue of api.query.validate()) if (issue.level !== "info") findings.push(`Check Map: ${issue.text}${issue.where ? ` (${issue.where})` : ""}`);
   return { result, findings, placed };
 }
@@ -2190,7 +2267,7 @@ function h(tag, props = null, ...children) {
   return el;
 }
 function append(el, children) {
-  for (const c of children) if (c !== null && c !== void 0 && c !== false) el.append(typeof c === "string" || typeof c === "number" ? document.createTextNode(String(c)) : c);
+  for (const c2 of children) if (c2 !== null && c2 !== void 0 && c2 !== false) el.append(typeof c2 === "string" || typeof c2 === "number" ? document.createTextNode(String(c2)) : c2);
 }
 function clear(el) {
   while (el.firstChild) el.removeChild(el.firstChild);
@@ -2256,6 +2333,37 @@ var STYLE = `
 .ai .ai-turn { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim, #99a2b3); padding: 3px 8px; border-top: 1px dashed var(--border, #333); }
 .ai .ai-turn .ai-grow { flex: 1; }
 .ai .ai-shot img { max-width: 100%; border: 1px solid var(--border, #333); border-radius: 3px; }
+.ai.ai-assistant { flex: 1; min-height: 0; }
+.ai.ai-assistant .ai-chat { flex: 1; min-height: 160px; max-height: none; }
+.ai .ai-state { display: flex; flex-direction: column; gap: 4px; padding: 5px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); font-size: 11px; }
+.ai .ai-state-line { display: flex; align-items: center; gap: 8px; min-height: 16px; }
+.ai .ai-phase { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; color: var(--text-dim, #99a2b3); }
+.ai .ai-state.is-thinking .ai-phase, .ai .ai-state.is-waiting .ai-phase { color: var(--teal, #4fd1c5); }
+.ai .ai-state.is-writing .ai-phase { color: var(--text, #e6e9ef); }
+.ai .ai-state.is-tools .ai-phase { color: var(--gold, #e6b95c); }
+.ai .ai-state.is-failed .ai-phase { color: #ff9f7a; }
+.ai .ai-state.is-stopped .ai-phase { color: var(--text-faint, #6b7382); }
+.ai .ai-phase-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai .ai-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.ai .ai-pill { padding: 0 6px; border-radius: 8px; background: var(--bg-3, #232833); color: var(--text-dim, #99a2b3); font-size: 10px; white-space: nowrap; }
+.ai .ai-pill:empty { display: none; }
+.ai .ai-shimmer { height: 2px; border-radius: 1px; background: var(--bg-3, #232833); overflow: hidden; }
+.ai .ai-shimmer > i { display: block; height: 100%; width: 35%; background: linear-gradient(90deg, transparent, var(--teal, #4fd1c5), transparent); animation: ai-slide 1.6s ease-in-out infinite; }
+.ai .ai-state.is-tools .ai-shimmer > i { background: linear-gradient(90deg, transparent, var(--gold, #e6b95c), transparent); }
+.ai .ai-caret { display: inline-block; width: 6px; height: 12px; margin-left: 2px; vertical-align: -2px; background: var(--teal, #4fd1c5); animation: ai-blink 1s steps(2) infinite; }
+@keyframes ai-blink { to { opacity: 0; } }
+.ai .ai-tool.is-pending code { color: var(--text-dim, #99a2b3); }
+.ai .ai-tool-mark { flex: none; width: 12px; text-align: center; }
+.ai .ai-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--text-faint, #6b7382); border-top-color: var(--teal, #4fd1c5); animation: ai-spin 0.8s linear infinite; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai .ai-steps { display: flex; flex-direction: column; gap: 3px; }
+.ai .ai-step { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
+.ai .ai-step .ai-step-mark { flex: none; width: 14px; text-align: center; }
+.ai .ai-step.is-running { background: var(--bg-3, #232833); }
+.ai .ai-step.is-done .ai-step-mark { color: var(--teal, #4fd1c5); }
+.ai .ai-step.is-failed .ai-step-mark { color: #ff9f7a; }
+.ai .ai-step.is-skipped { color: var(--text-faint, #6b7382); }
+.ai .ai-step .ai-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
 var styleCount = 0;
 function styled(body) {
@@ -2409,8 +2517,8 @@ function requireServer(ctx) {
 }
 function ledgerLine(ctx) {
   const text = () => {
-    const a = ctx.account.summary();
-    return a ? `${ctx.ledger.summary()} \xB7 ${a}` : ctx.ledger.summary();
+    const a2 = ctx.account.summary();
+    return a2 ? `${ctx.ledger.summary()} \xB7 ${a2}` : ctx.ledger.summary();
   };
   const el = h("div", { className: "ai-hint" }, text());
   const off = ctx.ledger.onChange(() => {
@@ -2601,10 +2709,10 @@ function readTools() {
         const cats = api.palette.doodadCategories();
         const want = str(input.category).toLowerCase();
         if (want) {
-          const c = cats.find((x) => x.name.toLowerCase() === want || x.name.toLowerCase().includes(want));
-          return c ? capResult(c.doodads.map((d) => ({ id: d.id, name: d.name, width: d.width, height: d.height }))) : `No category called "${str(input.category)}".`;
+          const c2 = cats.find((x) => x.name.toLowerCase() === want || x.name.toLowerCase().includes(want));
+          return c2 ? capResult(c2.doodads.map((d) => ({ id: d.id, name: d.name, width: d.width, height: d.height }))) : `No category called "${str(input.category)}".`;
         }
-        return capResult(cats.map((c) => ({ name: c.name, count: c.doodads.length })));
+        return capResult(cats.map((c2) => ({ name: c2.name, count: c2.doodads.length })));
       }
     },
     {
@@ -2615,7 +2723,7 @@ function readTools() {
         if (!scn) return "No map is open.";
         const owner = input.owner === void 0 ? null : ownerOf(input.owner);
         const name = str(input.name).toLowerCase();
-        const rect = hasRect(input) ? rectOf(input, api) : null;
+        const rect = hasRect(input) ? rectOf2(input, api) : null;
         const only = Array.isArray(input.indices) ? new Set(input.indices.map((v) => num(v, -1))) : null;
         const limit = Math.max(1, Math.min(1e3, num(input.limit, 200)));
         const details = input.details === true;
@@ -2623,12 +2731,12 @@ function readTools() {
         scn.units.forEach((u, index) => {
           if (only && !only.has(index)) return;
           if (owner !== null && u.owner !== owner) return;
-          const n = api.names.unit(u.unitId);
-          if (name && !n.toLowerCase().includes(name)) return;
+          const n2 = api.names.unit(u.unitId);
+          if (name && !n2.toLowerCase().includes(name)) return;
           const tx = Math.floor(u.x / TILE), ty = Math.floor(u.y / TILE);
           if (rect && (tx < rect.x0 || ty < rect.y0 || tx >= rect.x1 || ty >= rect.y1)) return;
           if (out.length >= limit) return;
-          const row = { index, name: n, owner: ownerName(u.owner), x: tx, y: ty };
+          const row = { index, name: n2, owner: ownerName(u.owner), x: tx, y: ty };
           if (u.resourceAmount) row.amount = u.resourceAmount;
           if (details) Object.assign(row, { px: u.x, py: u.y, hitPointsPercent: u.hitPointsPercent, shieldPercent: u.shieldPercent, energyPercent: u.energyPercent, hangar: u.hangarUnits, cloaked: !!(u.stateFlags & 1), burrowed: !!(u.stateFlags & 2), inTransit: !!(u.stateFlags & 4), hallucinated: !!(u.stateFlags & 8), invincible: !!(u.stateFlags & 16), serial: u.serial });
           out.push(row);
@@ -2642,7 +2750,7 @@ function readTools() {
       run: (input, { api }) => {
         const scn = api.document.scenario();
         if (!scn) return "No map is open.";
-        const rect = hasRect(input) ? rectOf(input, api) : null;
+        const rect = hasRect(input) ? rectOf2(input, api) : null;
         const limit = Math.max(1, Math.min(2e3, num(input.limit, 300)));
         const out = [];
         scn.doodads.forEach((d, index) => {
@@ -2661,7 +2769,7 @@ function readTools() {
       run: (input, { api }) => {
         const scn = api.document.scenario();
         if (!scn) return "No map is open.";
-        const rect = hasRect(input) ? rectOf(input, api) : null;
+        const rect = hasRect(input) ? rectOf2(input, api) : null;
         const limit = Math.max(1, Math.min(2e3, num(input.limit, 300)));
         const out = [];
         scn.sprites.forEach((s, index) => {
@@ -2696,14 +2804,14 @@ function readTools() {
         if (!scn) return "No map is open.";
         const usage = api.query.stringUsage();
         const unused = new Set(api.query.unusedStrings());
-        const q = str(input.query).toLowerCase();
+        const q2 = str(input.query).toLowerCase();
         const limit = Math.max(1, Math.min(2e3, num(input.limit, 200)));
         const out = [];
         for (let i = 1; i < scn.strings.strings.length && out.length < limit; i++) {
           const text = api.names.string(i);
           if (text === null || text === "") continue;
           if (input.unused === true && !unused.has(i)) continue;
-          if (q && !text.toLowerCase().includes(q)) continue;
+          if (q2 && !text.toLowerCase().includes(q2)) continue;
           out.push({ index: i, text: text.length > 200 ? `${text.slice(0, 200)}\u2026` : text, usedBy: (usage.get(i) ?? []).slice(0, 6).map((u) => `${u.kind}${"index" in u && u.index !== void 0 ? ` ${u.index}` : ""}`) });
         }
         return capResult({ count: out.length, slots: scn.strings.strings.length, strings: out });
@@ -2760,7 +2868,7 @@ ${text}`, 3e4);
       run: (input, ctx) => {
         const { api } = ctx;
         if (hasRect(input)) {
-          const rect = rectOf(input, api);
+          const rect = rectOf2(input, api);
           const cell = Math.max(1, Math.min(16, num(input.cellSize, Math.ceil(Math.max(rect.x1 - rect.x0, rect.y1 - rect.y0) / 48))));
           const g = sampleGrid(terrainAtTile(ctx), rect, cell);
           const names = Object.fromEntries(Object.entries(g.legend).map(([ch, id]) => [ch, api.terrain.types().find((t2) => t2.id === id)?.name ?? id]));
@@ -2780,7 +2888,7 @@ ${text}`, 3e4);
       run: (input, { api }) => {
         const scn = api.document.scenario();
         if (!scn) return "No map is open.";
-        const rect = rectOf(input, api);
+        const rect = rectOf2(input, api);
         const p = Math.max(1, Math.min(8, Math.round(num(input.player, 1)))) - 1;
         if (!scn.mask) return "The map has no MASK section: every tile starts unexplored for everyone.";
         const cell = Math.max(1, Math.min(16, num(input.cellSize, Math.ceil(Math.max(rect.x1 - rect.x0, rect.y1 - rect.y0) / 64))));
@@ -2788,12 +2896,12 @@ ${text}`, 3e4);
         for (let y = rect.y0; y < rect.y1; y += cell) {
           let row = "";
           for (let x = rect.x0; x < rect.x1; x += cell) {
-            let fog = 0, n = 0;
+            let fog = 0, n2 = 0;
             for (let yy = y; yy < Math.min(rect.y1, y + cell); yy++) for (let xx = x; xx < Math.min(rect.x1, x + cell); xx++) {
-              n++;
+              n2++;
               if (scn.mask[yy * scn.width + xx] >> p & 1) fog++;
             }
-            row += fog * 2 >= n ? "#" : ".";
+            row += fog * 2 >= n2 ? "#" : ".";
           }
           rows.push(row);
         }
@@ -2817,7 +2925,7 @@ ${text}`, 3e4);
       run: async (input, { api }) => {
         const info = api.document.info();
         if (!info) return "No map is open.";
-        const rect = hasRect(input) ? rectOf(input, api) : { x0: 0, y0: 0, x1: info.width, y1: info.height };
+        const rect = hasRect(input) ? rectOf2(input, api) : { x0: 0, y0: 0, x1: info.width, y1: info.height };
         let ppt = Math.max(1, Math.min(32, num(input.pixelsPerTile, 8)));
         while (ppt > 1 && (rect.x1 - rect.x0) * ppt * (rect.y1 - rect.y0) * ppt > 12e5) ppt = ppt > 8 ? ppt / 2 : ppt - 1;
         await api.tileset.load();
@@ -2850,8 +2958,8 @@ ${text}`, 3e4);
       def: { name: "lookup", description: 'Look a name up in the game data: kind "unit" (id, size, cost, hp, weapons, the map\'s own settings), "doodad", "sprite", "upgrade", "tech", "weapon", "ai_script", "condition" or "action" (the argument list). `query` is a name or part of one; several matches are listed.', inputSchema: obj({ kind: { type: "string", enum: ["unit", "doodad", "sprite", "upgrade", "tech", "weapon", "ai_script", "condition", "action"] }, query: { type: "string" } }, ["kind", "query"]) },
       writes: false,
       run: (input, { api }) => {
-        const kind = str(input.kind), q = str(input.query).toLowerCase();
-        const matches = (items) => items.filter((i) => i.label.toLowerCase().includes(q) || String(i.value) === q).slice(0, 25);
+        const kind = str(input.kind), q2 = str(input.query).toLowerCase();
+        const matches = (items) => items.filter((i) => i.label.toLowerCase().includes(q2) || String(i.value) === q2).slice(0, 25);
         switch (kind) {
           case "unit": {
             const hits = matches(api.names.units().filter((u) => u.value < 228));
@@ -2859,41 +2967,41 @@ ${text}`, 3e4);
               const t = api.settings.unitType(u.value);
               const s = api.palette.unitSize(u.value);
               return { id: u.value, name: u.label, race: api.data.race(u.value), width: s.width, height: s.height, building: s.building, flyer: s.flyer, ...t ? { useDefault: t.useDefault, hitPoints: t.hitPoints, shields: t.shields, armor: t.armor, buildTime: t.buildTime, minerals: t.mineralCost, gas: t.gasCost, weapons: t.weapons, customName: t.customName || void 0 } : {} };
-            })) : `No unit matches "${q}".`;
+            })) : `No unit matches "${q2}".`;
           }
           case "doodad": {
-            const all = api.palette.doodadCategories().flatMap((c) => c.doodads.map((d) => ({ ...d })));
-            const hits = all.filter((d) => d.name.toLowerCase().includes(q) || d.category.toLowerCase().includes(q) || String(d.id) === q).slice(0, 40);
-            return hits.length ? capResult(hits) : `No doodad matches "${q}".`;
+            const all = api.palette.doodadCategories().flatMap((c2) => c2.doodads.map((d) => ({ ...d })));
+            const hits = all.filter((d) => d.name.toLowerCase().includes(q2) || d.category.toLowerCase().includes(q2) || String(d.id) === q2).slice(0, 40);
+            return hits.length ? capResult(hits) : `No doodad matches "${q2}".`;
           }
           case "sprite": {
             const ids = api.palette.spriteGroups().flatMap((g) => g.ids.map((id) => ({ value: id, label: api.palette.spriteName("pure", id), group: g.label })));
-            const hits = ids.filter((s) => s.label.toLowerCase().includes(q) || String(s.value) === q).slice(0, 40);
-            return hits.length ? capResult(hits.map((s) => ({ id: s.value, name: s.label, group: s.group }))) : `No sprite matches "${q}".`;
+            const hits = ids.filter((s) => s.label.toLowerCase().includes(q2) || String(s.value) === q2).slice(0, 40);
+            return hits.length ? capResult(hits.map((s) => ({ id: s.value, name: s.label, group: s.group }))) : `No sprite matches "${q2}".`;
           }
           case "upgrade": {
             const hits = matches(api.names.upgrades());
-            return hits.length ? capResult(hits.map((u) => api.settings.upgrade(u.value) ?? u)) : `No upgrade matches "${q}".`;
+            return hits.length ? capResult(hits.map((u) => api.settings.upgrade(u.value) ?? u)) : `No upgrade matches "${q2}".`;
           }
           case "tech": {
             const hits = matches(api.names.techs());
-            return hits.length ? capResult(hits.map((t) => api.settings.tech(t.value) ?? t)) : `No technology matches "${q}".`;
+            return hits.length ? capResult(hits.map((t) => api.settings.tech(t.value) ?? t)) : `No technology matches "${q2}".`;
           }
           case "weapon": {
             const hits = matches(api.names.weapons());
-            return hits.length ? capResult(hits.map((w) => ({ id: w.value, name: w.label, damage: api.data.weapons()?.damage[w.value], bonus: api.data.weapons()?.bonus[w.value] }))) : `No weapon matches "${q}".`;
+            return hits.length ? capResult(hits.map((w) => ({ id: w.value, name: w.label, damage: api.data.weapons()?.damage[w.value], bonus: api.data.weapons()?.bonus[w.value] }))) : `No weapon matches "${q2}".`;
           }
           case "ai_script": {
-            const hits = api.triggers.defs.choices("aiScript").filter((c) => c.label.toLowerCase().includes(q) || (c.aliases ?? []).some((a) => a.toLowerCase().includes(q))).slice(0, 40);
-            return hits.length ? capResult(hits.map((c) => ({ label: c.label, aliases: c.aliases }))) : `No AI script matches "${q}".`;
+            const hits = api.triggers.defs.choices("aiScript").filter((c2) => c2.label.toLowerCase().includes(q2) || (c2.aliases ?? []).some((a2) => a2.toLowerCase().includes(q2))).slice(0, 40);
+            return hits.length ? capResult(hits.map((c2) => ({ label: c2.label, aliases: c2.aliases }))) : `No AI script matches "${q2}".`;
           }
           case "condition": {
-            const hits = api.triggers.defs.conditions().filter((c) => c.name.toLowerCase().includes(q));
-            return hits.length ? capResult(hits.map((c) => ({ name: c.name, args: c.args.map((a) => `${a.label}: ${a.kind}`) }))) : `No condition matches "${q}".`;
+            const hits = api.triggers.defs.conditions().filter((c2) => c2.name.toLowerCase().includes(q2));
+            return hits.length ? capResult(hits.map((c2) => ({ name: c2.name, args: c2.args.map((a2) => `${a2.label}: ${a2.kind}`) }))) : `No condition matches "${q2}".`;
           }
           case "action": {
-            const hits = [...api.triggers.defs.actions(false).map((a) => ({ ...a, briefing: false })), ...api.triggers.defs.actions(true).map((a) => ({ ...a, briefing: true }))].filter((c) => c.name.toLowerCase().includes(q));
-            return hits.length ? capResult(hits.map((c) => ({ name: c.name, briefing: c.briefing, args: c.args.map((a) => `${a.label}: ${a.kind}`) }))) : `No action matches "${q}".`;
+            const hits = [...api.triggers.defs.actions(false).map((a2) => ({ ...a2, briefing: false })), ...api.triggers.defs.actions(true).map((a2) => ({ ...a2, briefing: true }))].filter((c2) => c2.name.toLowerCase().includes(q2));
+            return hits.length ? capResult(hits.map((c2) => ({ name: c2.name, briefing: c2.briefing, args: c2.args.map((a2) => `${a2.label}: ${a2.kind}`) }))) : `No action matches "${q2}".`;
           }
           default:
             return `Unknown kind "${kind}".`;
@@ -3019,26 +3127,26 @@ function scriptTools() {
         const done = [];
         if (Array.isArray(input.units)) {
           api.selection.setLayer("units");
-          api.selection.setUnits(ints(input.units));
-          done.push(`${ints(input.units).length} units`);
+          api.selection.setUnits(ints2(input.units));
+          done.push(`${ints2(input.units).length} units`);
         }
         if (Array.isArray(input.sprites)) {
           api.selection.setLayer("sprites");
-          api.selection.setSprites(ints(input.sprites));
-          done.push(`${ints(input.sprites).length} sprites`);
+          api.selection.setSprites(ints2(input.sprites));
+          done.push(`${ints2(input.sprites).length} sprites`);
         }
         if (Array.isArray(input.doodads)) {
           api.selection.setLayer("doodads");
-          api.selection.setDoodads(ints(input.doodads));
-          done.push(`${ints(input.doodads).length} doodads`);
+          api.selection.setDoodads(ints2(input.doodads));
+          done.push(`${ints2(input.doodads).length} doodads`);
         }
         if (Array.isArray(input.locations)) {
           api.selection.setLayer("locations");
-          api.selection.setLocations(ints(input.locations));
-          done.push(`${ints(input.locations).length} locations`);
+          api.selection.setLocations(ints2(input.locations));
+          done.push(`${ints2(input.locations).length} locations`);
         }
         if (input.x0 !== void 0 && input.x1 !== void 0) {
-          const r = rectOf(input, api);
+          const r = rectOf2(input, api);
           api.selection.markArea(r);
           api.view.center((r.x0 + r.x1) / 2 * TILE, (r.y0 + r.y1) / 2 * TILE);
           done.push(`area ${r.x0},${r.y0}\u2013${r.x1},${r.y1}`);
@@ -3078,9 +3186,9 @@ function settingsTools() {
               else notes.push(`unknown race "${str(p.race)}"`);
             }
             if (p.color !== void 0) {
-              const c = colorIndexOf(p.color);
-              if (c !== null) {
-                patch.color = c;
+              const c2 = colorIndexOf(p.color);
+              if (c2 !== null) {
+                patch.color = c2;
                 patch.rgb = null;
               } else notes.push(`unknown colour "${str(p.color)}"`);
             }
@@ -3107,7 +3215,7 @@ function settingsTools() {
               const v = bool(f[k]);
               if (v !== void 0) patch[k] = v;
             }
-            if (Array.isArray(f.players)) patch.players = ints(f.players).map((p) => p - 1).filter((p) => p >= 0 && p < 8);
+            if (Array.isArray(f.players)) patch.players = ints2(f.players).map((p) => p - 1).filter((p) => p >= 0 && p < 8);
             if (tx.forces.set(force, patch)) changed++;
           }
         });
@@ -3127,10 +3235,10 @@ function settingsTools() {
         if (typeof input.name === "string") patch.name = input.name;
         if (Array.isArray(input.weapons)) patch.weapons = list(input.weapons).map((w) => ({ id: Math.round(num(w.id)), ...w.damage !== void 0 ? { damage: Math.round(num(w.damage)) } : {}, ...w.bonus !== void 0 ? { bonus: Math.round(num(w.bonus)) } : {} }));
         if (Array.isArray(input.available)) {
-          patch.available = list(input.available).map((a) => {
-            const player = slotOf(a.player);
-            const v = typeof a.value === "string" && /default/i.test(a.value) ? "default" : bool(a.value);
-            return player === null || v === void 0 ? null : { player, value: v };
+          patch.available = list(input.available).map((a2) => {
+            const player2 = slotOf(a2.player);
+            const v = typeof a2.value === "string" && /default/i.test(a2.value) ? "default" : bool(a2.value);
+            return player2 === null || v === void 0 ? null : { player: player2, value: v };
           }).filter((x) => x !== null);
         }
         let changed = false;
@@ -3152,8 +3260,8 @@ function settingsTools() {
         for (const k of ["mineralCost", "mineralFactor", "gasCost", "gasFactor", "timeCost", "timeFactor"]) if (input[k] !== void 0) patch[k] = Math.round(num(input[k]));
         if (input.useDefault !== void 0) patch.useDefault = bool(input.useDefault);
         if (Array.isArray(input.levels)) patch.levels = list(input.levels).map((l) => {
-          const player = slotOf(l.player);
-          return player === null ? null : { player, ...l.start !== void 0 ? { start: Math.round(num(l.start)) } : {}, ...l.max !== void 0 ? { max: Math.round(num(l.max)) } : {}, ...bool(l.useDefault) ? { useDefault: true } : {} };
+          const player2 = slotOf(l.player);
+          return player2 === null ? null : { player: player2, ...l.start !== void 0 ? { start: Math.round(num(l.start)) } : {}, ...l.max !== void 0 ? { max: Math.round(num(l.max)) } : {}, ...bool(l.useDefault) ? { useDefault: true } : {} };
         }).filter((x) => x !== null);
         let changed = false;
         api.document.update(`AI: upgrade ${api.names.upgrade(id)}`, (tx) => {
@@ -3173,8 +3281,8 @@ function settingsTools() {
         for (const k of ["mineralCost", "gasCost", "researchTime", "energyCost"]) if (input[k] !== void 0) patch[k] = Math.round(num(input[k]));
         if (input.useDefault !== void 0) patch.useDefault = bool(input.useDefault);
         if (Array.isArray(input.state)) patch.state = list(input.state).map((s) => {
-          const player = slotOf(s.player);
-          return player === null ? null : { player, ...bool(s.available) !== void 0 ? { available: bool(s.available) } : {}, ...bool(s.researched) !== void 0 ? { researched: bool(s.researched) } : {}, ...bool(s.useDefault) ? { useDefault: true } : {} };
+          const player2 = slotOf(s.player);
+          return player2 === null ? null : { player: player2, ...bool(s.available) !== void 0 ? { available: bool(s.available) } : {}, ...bool(s.researched) !== void 0 ? { researched: bool(s.researched) } : {}, ...bool(s.useDefault) ? { useDefault: true } : {} };
         }).filter((x) => x !== null);
         let changed = false;
         api.document.update(`AI: technology ${api.names.tech(id)}`, (tx) => {
@@ -3218,7 +3326,7 @@ function terrainTools() {
       def: { name: "paint_terrain", description: "Paint a tile rect with a terrain type id (see the reference or list_terrains) using the isometric brush, so cliffs and shores form on their own. Diamonds the tileset cannot join to their neighbours are refused and counted. One undo step.", inputSchema: obj({ ...rectSchema, terrain: { type: "integer" } }, ["x0", "y0", "x1", "y1", "terrain"]) },
       writes: true,
       run: (input, { api }) => {
-        const rect = rectOf(input, api);
+        const rect = rectOf2(input, api);
         const terrain = num(input.terrain);
         const type = api.terrain.types().find((t) => t.id === terrain) ?? api.terrain.types().find((t) => t.name.toLowerCase() === str(input.terrain).toLowerCase());
         if (!type) return `Terrain ${str(input.terrain)} is not one of this tileset's types; see the reference.`;
@@ -3293,12 +3401,12 @@ function triggerTools() {
       settings: true,
       run: (input, { api }) => {
         const briefing = input.briefing === true;
-        const indices = ints(input.indices).map((i) => i - 1).filter((i) => i >= 0);
-        let n = 0;
+        const indices = ints2(input.indices).map((i) => i - 1).filter((i) => i >= 0);
+        let n2 = 0;
         api.document.update("AI: remove triggers", (tx) => {
-          n = (briefing ? tx.briefing : tx.triggers).remove(indices);
+          n2 = (briefing ? tx.briefing : tx.triggers).remove(indices);
         });
-        return `Removed ${plural(n, "trigger")}.`;
+        return `Removed ${plural(n2, "trigger")}.`;
       }
     },
     {
@@ -3319,19 +3427,19 @@ function triggerTools() {
       writes: true,
       settings: true,
       run: (input, { api }) => {
-        const indices = ints(input.indices).map((i) => i - 1).filter((i) => i >= 0);
+        const indices = ints2(input.indices).map((i) => i - 1).filter((i) => i >= 0);
         const preserved = bool(input.preserved);
         if (preserved === void 0) return "Say whether preserved should be true or false.";
-        let n = 0;
+        let n2 = 0;
         api.document.update("AI: trigger flags", (tx) => {
           const listNow = tx.triggers.list();
           for (const i of indices) {
             const t = listNow[i];
             if (!t) continue;
-            if (tx.triggers.replace(i, api.triggers.setPreserved(t, preserved))) n++;
+            if (tx.triggers.replace(i, api.triggers.setPreserved(t, preserved))) n2++;
           }
         });
-        return `Changed ${plural(n, "trigger")}.`;
+        return `Changed ${plural(n2, "trigger")}.`;
       }
     },
     {
@@ -3387,68 +3495,1063 @@ function triggerTools() {
   ];
 }
 
+// guides.ts
+var BASICS = `# Scenario basics (UMS)
+
+**Players.** Slots 1\u20138 are the game's players; slot 12 is neutral (resources, critters, props). A *Human* slot is a person; a *Computer* slot owns what the triggers create for the enemy or the shop; *Rescuable* units join whoever touches them; *Neutral* units belong to nobody. Every human needs a start location. The game's AI does nothing for a computer slot in a scenario unless a trigger runs an AI script \u2014 which is usually what you want: the triggers are the AI.
+
+**Forces.** Four. Players in one force can be allied (they do not attack each other), share victory (one wins, all win) and share vision. A team of humans is one force with Allied Victory; the enemy computer is another force. Force names are shown in the lobby.
+
+**Triggers.** Each trigger has conditions (all must hold), actions (run in order) and a player list (it runs once *per player* it is listed for, with "Current Player" meaning that player). A trigger fires once, then never again, unless it has Preserve Trigger. The list runs top to bottom about every two seconds; with *hyper triggers* \u2014 a preserved trigger of ~62 Wait(0) actions, kept in three copies \u2014 it runs about twelve times a second, which is what makes spawns, timers and reactions feel instant. A Wait inside any *other* preserved trigger stalls that player's whole trigger queue, hyper triggers included: time with death counters instead.
+
+**Death counters.** Deaths(player, unit) is the game's counter per player per unit type, and Set Deaths writes it \u2014 so a unit that is never placed ("Cave (Unused)", "Cantina (Unused)", the Markers) is a free integer variable per player. Timers: add 1 every cycle, act when it reaches N, set it to 0. Twelve cycles a second with hypers, one every two seconds without.
+
+**Switches.** 256 booleans shared by everyone. Good for one-off flags ("boss spawned"), poor for anything counted.
+
+**Locations.** Named rectangles (254 of them, Anywhere is the whole map). Bring(player, unit, location) is how a map sees where a unit is; Create Unit, Move Unit, Kill Unit At Location, Order all take one. Make locations a little larger than the thing they watch. A location can exclude heights (ground / air) so a flier overhead does not trigger a ground beacon.
+
+**Resources and score.** Set Resources adds minerals or gas; Accumulate tests them. Kill score (Score \u2026 Kills) grows by roughly a unit's cost per kill and can be subtracted from, which is how "kill to cash" is paid. Leaderboards show kills, control, resources or points.
+
+**Ending the game.** Nothing ends a scenario by itself. Victory and Defeat are actions; the melee rule "no buildings, you lose" does not apply. Every human needs a path to each. Opponents(Current Player, Exactly, 0) is true when every non-allied player is gone or defeated \u2014 the usual last-standing victory.
+
+**Limits.** 1700 units on the map at once (Create Unit silently fails past it); 65535 strings in a Brood War map; 254 locations; text messages of a few hundred characters; a Wait longer than ~2 minutes is a bad idea. Units created on unwalkable ground or on top of a building are placed at the nearest free spot, or not at all when the location is packed.
+
+**Text.** Display Text Message shows a line at the top left; Set Mission Objectives fills the objectives box (F10 \u25B8 Objectives). Colour codes are bytes below 0x20 in the string (the editor's string fields have a picker).`;
+var MADNESS = `# Madness maps
+
+A *madness* map is a symmetric free-for-all where the map spawns each player's army for them and the armies fight on their own. The player's job is to spend what they earn on the right things and to pick the moment to push.
+
+**Layout.** One base per player, each a small walled plateau or corner with its hall (or a beacon that stands for it) and its *spawn location* beside it, all opening onto a common arena in the middle. Distances equal; the arena open; no resources to mine.
+
+**Players.** One human per base; one computer slot for props if any; humans each in their own force (or two forces for a team game with Allied Victory). All humans start hostile to each other.
+
+**Systems (toolkit kinds).**
+- \`hyper\`, always.
+- \`spawn\`: a unit every few seconds at \`Spawn {p}\`, owned by the player (\`owner: each\`), with \`attack\` set to the arena so the units go and fight. Several spawn systems for several unit types; \`limit\` keeps the unit count under control.
+- \`auto-attack\` on each player's units from Anywhere to the arena keeps stragglers moving.
+- \`kill-to-cash\` or \`income\` so there is something to spend; unit and upgrade costs go through Unit Settings.
+- \`last-standing\` with \`unit: Buildings\` (the hall is the life) or a hero unit.
+- \`leaderboard\` kills, \`objectives\`.
+
+**Pitfalls.** Spawns without a limit hit the 1700-unit cap in minutes and the game stops creating units for everyone. A base with two exits is a base that dies to a flank; one ramp. Spawned units that are not ordered sit at the spawn until attacked.`;
+var DEFENSE = `# Defense and tower defense
+
+Waves of enemy units walk from a spawn to a goal; the players kill them on the way. In a *tower defense* the players build static defence (turrets, cannons, sunkens) along a lane and cannot fight themselves; in a *hero defense* they control units.
+
+**Layout.** A lane from a spawn location to a goal location \u2014 a corridor of unbuildable ground with buildable strips beside it for towers, or a maze. The goal is a small location the enemies path into. Players start beside the lane with a builder each and no minerals to mine.
+
+**Players.** Humans in one force with Allied Victory and shared vision; one computer as the enemy, hostile to all; its units must be ordered, or they stand at the spawn.
+
+**Systems.**
+- \`hyper\`.
+- \`waves\`: units by wave, count and growth, interval, spawn and goal; the last wave cleared is the victory.
+- \`lives\`: a leak (an enemy reaching the goal) is removed and costs a shared life; zero lives is defeat.
+- \`kill-to-cash\` for the bounty (\`scorePerKill\` \u2248 the enemy unit's cost, so a Zergling pays half a Hydralisk).
+- \`income\` per wave or per tower (\`perUnit\`) if the map wants a steady economy.
+- \`leaderboard\` kills, \`objectives\`, \`message\` for the first wave.
+
+**Pitfalls.** Towers on the lane block it and the wave stops: make the lane unbuildable. Bounty through kill score pays in lumps of \`scorePerKill\`; set it to the cheapest enemy's score. A wave stronger than the towers ends the game in one leak \u2014 give lives.`;
+var RPG = `# RPG maps
+
+Each player controls a hero (a named unit, or an ordinary unit with Unit Settings) through a world of quests, shops and bosses. Progression is minerals from kills spent at shops, upgrades bought at beacons, and story told by text.
+
+**Layout.** A town (start locations, a heal spot, shops as beacon locations, a save/teleport gate) and regions of rising difficulty joined by paths; a boss room at the end. Enemy units are placed by hand (they belong to the computer) or spawned in regions when a player enters. Locations: the town, each shop's beacon, each region, each boss room, teleport pairs.
+
+**Players.** Humans in one force, allied, shared vision, Allied Victory. The computer owns the enemies and the shopkeepers; a *rescuable* slot for units that join when found.
+
+**Systems.**
+- \`hyper\`.
+- \`kill-to-cash\` for the economy; \`shop\` per item (bring the hero to the beacon with the price; \`deliver\` next to the shop); \`heal\` in the town.
+- \`respawn\` for the hero (with \`lives\`, or unlimited), or \`defeat-when-lost\` for permadeath.
+- \`spawn\` with \`owner: computer\` in a region for monsters that keep coming; \`give\` for a rescued companion; \`teleport\` between the town and the regions.
+- \`message\` on entering a region (\`location\`) for the story; \`objectives\`.
+- Victory: \`victory-on-kills\` of the boss unit (\`unit: <the boss>\`, \`count: 1\`), or a custom system for a staged fight.
+
+**Pitfalls.** Heroes need Unit Settings (hit points, damage) to survive at all; the default marine dies to two zerglings. A shop beacon inside the walking path buys by accident \u2014 set it off the path. Enemies placed by hand for the computer stand still unless the computer runs an AI script or a trigger orders them: \`auto-attack\` from a region to the town is the simplest guard behaviour.`;
+var BOUND = `# Bound maps
+
+A *bound* is an obstacle course: a narrow path of explosions (usually Scourge, Scarabs or nukes killed on the tiles) the player's unit must run through with the right timing, with checkpoints to respawn at. Pure timing and pattern; no economy.
+
+**Layout.** A winding path one to three tiles wide, high ground or platform, walled by unwalkable terrain, with a checkpoint location every so often and a finish location at the end. Each explosion spot is a location; a level is a set of them fired in a repeating sequence.
+
+**Players.** Humans each with one unit (a Zergling, a fast Terran unit), in one force or none; a computer owns the explosion units. Lives per player.
+
+**Systems.**
+- \`hyper\`, essential: the timing is the game.
+- Obstacle sequences are *custom*: each is a death-counter timer that cycles through the spots, creating a unit at a spot for the computer and killing it there (Create Unit + Kill Unit At Location) a fraction of a second later, so the death animation is the explosion. Say the spot names, the order and the tempo in the system's description.
+- \`kill-zone\` on the explosion spots is not it \u2014 the explosion itself kills; the zone kind is for pits.
+- \`respawn\` at the last checkpoint: a checkpoint is a \`message\` + a switch or death counter set when the player brings the unit there, and the respawn location moves with it (custom, or one \`respawn\` per checkpoint gated on that counter).
+- \`victory-on-kills\` does not apply; victory is a \`message\` + Victory when the unit is brought to the finish (custom, one trigger).
+
+**Pitfalls.** Without hyper triggers a bound is unplayable \u2014 the explosions come every two seconds. Explosion units owned by a human hurt only enemies; give them to the computer and make it hostile.`;
+var DIPLOMACY = `# Diplomacy and risk maps
+
+Territories on a world map, each with a building or beacon that marks control; income per territory held; alliances made and broken in the game's diplomacy menu; last empire standing wins.
+
+**Layout.** Regions of buildable ground separated by water, mountains and chokes, each with a capital location and a few resource-free building spots; start locations spread evenly; a legend of region names in the description or the objectives.
+
+**Players.** Up to eight humans, each in their own force so alliances are up to them (no shared vision); a computer for rebels or barbarians, hostile to all.
+
+**Systems.**
+- \`hyper\` is optional; a slow tempo suits.
+- \`income\` per region: one system per region with \`perUnit\` the region's capital building and \`players: humans\`, or a flat income plus \`kill-to-cash\`.
+- \`spawn\` with \`owner: computer\` in neutral regions for rebels; \`auto-attack\` to send them at the nearest capital.
+- \`last-standing\` with \`unit: Buildings\`; \`leaderboard\` control of the capital building; \`objectives\`.
+- A \`countdown\` with \`onEnd: draw\` if the game must end.
+
+**Pitfalls.** Eight players and Allied Victory in one force means everyone wins together \u2014 leave the humans in separate forces. Income systems each take a death counter; the toolkit has about eighteen.`;
+var ARENA = `# Arena and micro maps
+
+Rounds in a walled arena: each side gets the same units, the survivor of the round scores, first to N rounds wins. All skill, no economy.
+
+**Layout.** A flat arena with two (or four) spawn locations at its sides and a wall around it; a lobby location per player outside. Symmetric.
+
+**Players.** Two humans (or two forces of humans with Allied Victory), hostile.
+
+**Systems.**
+- \`hyper\`.
+- Round flow is custom: when the arena holds units of only one side, that side's score counter goes up, everything in the arena is removed, and after a short pause both sides get the round's units at their spawns. Say the unit list per round in the description.
+- \`spawn\` does not fit (it is periodic); use it only for a practice mode.
+- \`victory-on-kills\` does not fit either; the win is the round score \u2014 custom, or \`countdown\` with \`onEnd: victory:<the leader>\` when a timed match is enough.
+- \`leaderboard\` points with the round score in Set Score (Custom); \`objectives\`.
+
+**Pitfalls.** Units left from the last round decide the next; remove everything in the arena between rounds. A wall the units can shoot over is not a wall.`;
+var SURVIVAL = `# Survival, hero survival, cat and mouse
+
+Hold out until a timer runs out, or hunt the survivors before it does. In *cat and mouse* one side (the cats) hunts the others (the mice), who build walls and hide; in *hero survival* every player fights the map's spawns and the last one alive wins.
+
+**Layout.** A large open area with hiding places and chokes for the mice; spawn locations for the map's monsters at the edges; a safe start for each human.
+
+**Players.** Cats and mice in two forces (no Allied Victory across them); or every human alone; a computer for the monsters.
+
+**Systems.**
+- \`hyper\`.
+- \`countdown\` with \`onEnd: victory:Force 2\` (the mice) \u2014 the cats must win before it ends; or \`victory:humans\` in a co-op survival.
+- \`spawn\` with \`owner: computer\` at the edges, \`attack\` toward the centre, and \`auto-attack\` so the monsters hunt.
+- \`defeat-when-lost\` on each player's hero, or \`last-standing\`.
+- \`income\` for the mice to build with; \`kill-to-cash\` for the cats.
+- \`leaderboard\` control of the hero unit shows who is still alive; \`objectives\`.
+
+**Pitfalls.** A countdown victory for a force while another system gives Defeat on the same cycle is a race \u2014 put the defeat's grace period after the timer. Monsters spawned without an order stand still.`;
+var GUIDES = [
+  { id: "basics", title: "Scenario basics", keywords: ["ums", "scenario", "trigger", "death counter", "hyper", "switch", "location"], text: BASICS },
+  { id: "madness", title: "Madness maps", keywords: ["madness", "mass", "spawn war", "auto spawn"], text: MADNESS },
+  { id: "defense", title: "Defense and tower defense", keywords: ["defense", "defence", "tower", "td", "waves", "sunken", "cannon"], text: DEFENSE },
+  { id: "rpg", title: "RPG maps", keywords: ["rpg", "hero", "quest", "adventure", "shop", "boss", "dungeon"], text: RPG },
+  { id: "bound", title: "Bound maps", keywords: ["bound", "obstacle", "dodge", "explosion", "scourge"], text: BOUND },
+  { id: "diplomacy", title: "Diplomacy and risk", keywords: ["diplomacy", "risk", "empire", "territory", "nations", "world map"], text: DIPLOMACY },
+  { id: "arena", title: "Arena and micro", keywords: ["arena", "micro", "rounds", "duel", "1v1", "pvp", "tournament"], text: ARENA },
+  { id: "survival", title: "Survival, hero survival, cat and mouse", keywords: ["survival", "survive", "cat and mouse", "hunt", "zombie", "horror", "hold out", "last man"], text: SURVIVAL }
+];
+function guideById(id) {
+  const wanted = id.trim().toLowerCase();
+  return GUIDES.find((g) => g.id === wanted || g.title.toLowerCase() === wanted) ?? null;
+}
+function guideFor(prompt) {
+  const text = ` ${prompt.toLowerCase()} `;
+  let best = null;
+  let score = 0;
+  for (const g of GUIDES) {
+    if (g.id === "basics") continue;
+    let n2 = 0;
+    for (const k of g.keywords) if (text.includes(` ${k} `) || text.includes(`${k} `) || text.includes(` ${k}`)) n2 += k.length > 3 ? 2 : 1;
+    if (n2 > score) {
+      best = g;
+      score = n2;
+    }
+  }
+  return best;
+}
+function guideIndex() {
+  return GUIDES.map((g) => `${g.id}: ${g.title}`).join("\n");
+}
+
+// ums.ts
+var ToolkitError = class extends Error {
+  problems;
+  constructor(problems) {
+    super(problems.join("; "));
+    this.name = "ToolkitError";
+    this.problems = problems;
+  }
+};
+var DEFAULT_DC_UNITS = [
+  "Cave (Unused)",
+  "Cave-in (Unused)",
+  "Cantina (Unused)",
+  "Mining Platform (Unused)",
+  "Independent Command Center (Unused)",
+  "Independent Starport (Unused)",
+  "Independent Jump Gate (Unused)",
+  "Ruins (Unused)",
+  "Khaydarin Crystal Formation (Unused)",
+  "Zerg Marker",
+  "Terran Marker",
+  "Protoss Marker",
+  "Map Revealer",
+  "Scanner Sweep",
+  "Data Disk",
+  "Khaydarin Crystal",
+  "Uraj Crystal",
+  "Khalis Crystal"
+];
+function cyclesFor(seconds, hyper) {
+  return Math.max(1, Math.round(hyper ? seconds * 12 : seconds / 2));
+}
+var q = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+var player = (p) => typeof p === "number" ? `Player ${p}` : p;
+function trigger(owners, conditions, actions) {
+  const lines = [`Trigger(${owners.map((o) => q(player(o))).join(", ")}){`, "Conditions:"];
+  for (const c2 of conditions.length ? conditions : ["Always()"]) lines.push(`	${c2};`);
+  lines.push("Actions:");
+  for (const a2 of actions) lines.push(`	${a2};`);
+  lines.push("}", "");
+  return lines.join("\n");
+}
+var CUR = "Current Player";
+var c = {
+  always: () => "Always()",
+  deaths: (p, unit, cmp, n2) => `Deaths(${q(player(p))}, ${q(unit)}, ${cmp}, ${n2})`,
+  bring: (p, unit, loc, cmp, n2) => `Bring(${q(player(p))}, ${q(unit)}, ${q(loc)}, ${cmp}, ${n2})`,
+  command: (p, unit, cmp, n2) => `Command(${q(player(p))}, ${q(unit)}, ${cmp}, ${n2})`,
+  kill: (p, unit, cmp, n2) => `Kill(${q(player(p))}, ${q(unit)}, ${cmp}, ${n2})`,
+  score: (p, score, cmp, n2) => `Score(${q(player(p))}, ${score}, ${cmp}, ${n2})`,
+  accumulate: (p, cmp, n2, res) => `Accumulate(${q(player(p))}, ${cmp}, ${n2}, ${res})`,
+  elapsed: (cmp, s) => `Elapsed Time(${cmp}, ${s})`,
+  countdown: (cmp, s) => `Countdown Timer(${cmp}, ${s})`,
+  opponents: (p, cmp, n2) => `Opponents(${q(player(p))}, ${cmp}, ${n2})`,
+  switch: (name, state) => `Switch(${q(name)}, ${state})`
+};
+var a = {
+  preserve: () => "Preserve Trigger()",
+  wait: (ms) => `Wait(${ms})`,
+  create: (p, unit, n2, loc) => `Create Unit(${q(player(p))}, ${q(unit)}, ${n2}, ${q(loc)})`,
+  setDeaths: (p, unit, mod, n2) => `Set Deaths(${q(player(p))}, ${q(unit)}, ${mod}, ${n2})`,
+  setResources: (p, mod, n2, res) => `Set Resources(${q(player(p))}, ${mod}, ${n2}, ${res})`,
+  setScore: (p, mod, n2, score) => `Set Score(${q(player(p))}, ${mod}, ${n2}, ${score})`,
+  text: (s) => `Display Text Message(Always Display, ${q(s)})`,
+  objectives: (s) => `Set Mission Objectives(${q(s)})`,
+  victory: () => "Victory()",
+  defeat: () => "Defeat()",
+  killAt: (p, unit, n2, loc) => `Kill Unit At Location(${q(player(p))}, ${q(unit)}, ${n2}, ${q(loc)})`,
+  removeAt: (p, unit, n2, loc) => `Remove Unit At Location(${q(player(p))}, ${q(unit)}, ${n2}, ${q(loc)})`,
+  move: (p, unit, n2, from, to) => `Move Unit(${q(player(p))}, ${q(unit)}, ${n2}, ${q(from)}, ${q(to)})`,
+  order: (p, unit, from, to, order) => `Order(${q(player(p))}, ${q(unit)}, ${q(from)}, ${q(to)}, ${order})`,
+  hp: (p, unit, pct, n2, loc) => `Modify Unit Hit Points(${q(player(p))}, ${q(unit)}, ${pct}, ${n2}, ${q(loc)})`,
+  shields: (p, unit, pct, n2, loc) => `Modify Unit Shield Points(${q(player(p))}, ${q(unit)}, ${pct}, ${n2}, ${q(loc)})`,
+  lbKills: (label, unit) => `Leader Board Kills(${q(label)}, ${q(unit)})`,
+  lbControl: (label, unit) => `Leader Board Control(${q(label)}, ${q(unit)})`,
+  lbResources: (label, res) => `Leader Board Resources(${q(label)}, ${res})`,
+  lbPoints: (label, score) => `Leader Board Points(${q(label)}, ${score})`,
+  countdown: (mod, s) => `Set Countdown Timer(${mod}, ${s})`,
+  alliance: (p, status) => `Set Alliance Status(${q(player(p))}, ${status})`,
+  give: (from, to, unit, n2, loc) => `Give Units to Player(${q(player(from))}, ${q(player(to))}, ${q(unit)}, ${n2}, ${q(loc)})`,
+  ping: (loc) => `Minimap Ping(${q(loc)})`,
+  center: (loc) => `Center View(${q(loc)})`,
+  setSwitch: (name, action) => `Set Switch(${q(name)}, ${action})`,
+  invincible: (p, unit, loc, state) => `Set Invincibility(${q(player(p))}, ${q(unit)}, ${q(loc)}, ${state})`
+};
+var Reader = class {
+  problems = [];
+  notes = [];
+  seen = /* @__PURE__ */ new Set();
+  kind;
+  params;
+  ctx;
+  constructor(kind, params, ctx) {
+    this.kind = kind;
+    this.params = params;
+    this.ctx = ctx;
+  }
+  raw(name) {
+    this.seen.add(name);
+    const v = this.params[name];
+    return v === void 0 || v.trim() === "" ? void 0 : v.trim();
+  }
+  str(name, fallback) {
+    const v = this.raw(name);
+    if (v !== void 0) return v;
+    if (fallback !== void 0) return fallback;
+    this.problems.push(`"${name}" is required`);
+    return "";
+  }
+  int(name, fallback, lo = 0, hi = 1e6) {
+    const v = this.raw(name);
+    if (v === void 0) return fallback;
+    const cleaned = v.replace(/[^0-9.-]/g, "");
+    const n2 = cleaned === "" ? NaN : Number(cleaned);
+    if (!Number.isFinite(n2)) {
+      this.problems.push(`"${name}" should be a number, not "${v}"`);
+      return fallback;
+    }
+    return Math.max(lo, Math.min(hi, Math.round(n2)));
+  }
+  bool(name, fallback) {
+    const v = this.raw(name);
+    if (v === void 0) return fallback;
+    if (/^(true|yes|on|1)$/i.test(v)) return true;
+    if (/^(false|no|off|0)$/i.test(v)) return false;
+    this.problems.push(`"${name}" should be yes or no, not "${v}"`);
+    return fallback;
+  }
+  /** A location name, checked against the context when it lists any. */
+  location(name, fallback) {
+    const v = this.str(name, fallback);
+    if (v && this.ctx.locations && this.ctx.locations.length > 0 && v.toLowerCase() !== "anywhere" && !this.ctx.locations.some((l) => l.toLowerCase() === v.toLowerCase())) {
+      this.problems.push(`"${name}" names location "${v}", which the map does not have`);
+    }
+    return v;
+  }
+  /** Players: "humans" (default), "computers", "all", or a list like "1, 2, 5". 1-based. */
+  players(name, fallback = "humans") {
+    const v = this.raw(name) ?? fallback;
+    if (/^humans?$/i.test(v)) return this.ctx.humans;
+    if (/^computers?$/i.test(v)) return this.ctx.computers;
+    if (/^all$/i.test(v)) return [...this.ctx.humans, ...this.ctx.computers];
+    const list2 = v.split(/[,\s]+/).map((s) => Number(s.replace(/^p(?:layer)?\s*/i, ""))).filter((n2) => Number.isInteger(n2) && n2 >= 1 && n2 <= 12);
+    if (list2.length === 0) this.problems.push(`"${name}" should be humans, computers, all, or player numbers, not "${v}"`);
+    return list2;
+  }
+  /** One player: a number 1–12, or "computer" for the first computer slot; `fallback` may be "computer" too. */
+  onePlayer(name, fallback) {
+    let v = this.raw(name);
+    if (v === void 0) {
+      if (typeof fallback === "number") return fallback;
+      if (fallback === "computer") v = "computer";
+      else {
+        this.problems.push(`"${name}" is required`);
+        return 12;
+      }
+    }
+    if (/^computer$/i.test(v)) {
+      if (this.ctx.computers[0]) return this.ctx.computers[0];
+      this.problems.push(`"${name}" says computer, but the map has no computer player`);
+      return 12;
+    }
+    if (/^neutral$/i.test(v)) return 12;
+    const n2 = Number(v.replace(/^p(?:layer)?\s*/i, ""));
+    if (!Number.isInteger(n2) || n2 < 1 || n2 > 12) {
+      this.problems.push(`"${name}" should be a player number 1\u201312, not "${v}"`);
+      return 12;
+    }
+    return n2;
+  }
+  /** Comma-separated names. */
+  list(name, fallback = []) {
+    const v = this.raw(name);
+    return v === void 0 ? fallback : v.split(/\s*[,;]\s*/).map((s) => s.trim()).filter(Boolean);
+  }
+  /** Complain about parameters the kind does not take. */
+  finish() {
+    for (const k of Object.keys(this.params)) if (!this.seen.has(k) && !this.kind.params.some((p) => p.name === k)) this.problems.push(`"${k}" is not a parameter of ${this.kind.kind}`);
+    if (this.problems.length > 0) throw new ToolkitError(this.problems.map((p) => `${this.kind.kind}: ${p}`));
+  }
+};
+var Counters = class {
+  next = 0;
+  used = [];
+  ctx;
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+  take(what) {
+    const unit = this.ctx.dcUnits[this.next++];
+    if (!unit) throw new ToolkitError([`no death-counter unit left for ${what} (the toolkit knows ${this.ctx.dcUnits.length})`]);
+    this.used.push(unit);
+    return unit;
+  }
+};
+var P = (name, description, required = false) => ({ name, description, required });
+var KINDS = [
+  {
+    spec: {
+      kind: "hyper",
+      description: "Hyper triggers: make the whole trigger list run about twelve times a second instead of every two seconds. Needed by anything that spawns, counts or reacts faster than that. Three copies of a preserved trigger of 62 Wait(0)s.",
+      params: [P("owner", "who runs them: a player number that is always in the game, or All Players (the default)")]
+    },
+    build(r) {
+      const owner = r.str("owner", "All Players");
+      const own = /^\d+$/.test(owner) ? Number(owner) : owner;
+      const t = trigger([own], [], [...Array.from({ length: 62 }, () => a.wait(0)), a.preserve()]);
+      return { triggers: [t, t, t] };
+    }
+  },
+  {
+    spec: {
+      kind: "spawn",
+      description: "Spawn units on a timer at a location, for one or every player. With `players: humans` and a location like `Spawn {p}`, each human gets a trigger with {p} replaced by their number; `owner: each` gives the units to that player, `owner: computer` to the first computer slot.",
+      params: [P("location", "the spawn location; may contain {p} for the player number", true), P("unit", "the unit to create", true), P("count", "units per spawn (default 1)"), P("every", "seconds between spawns (default 10)"), P("players", "humans (default), computers, all, or player numbers"), P("owner", "each (default), computer, or a player number"), P("limit", "stop spawning while the owner commands at least this many of the unit (default none)"), P("attack", "a location to order the spawned units to attack-move to (default none)")]
+    },
+    build(r, ctx, dc) {
+      const location = r.str("location");
+      const unit = r.str("unit");
+      const count = r.int("count", 1, 1, 200);
+      const every = r.int("every", 10, 1, 3600);
+      const players2 = r.players("players");
+      const ownerRaw = r.str("owner", "each");
+      const limit = r.int("limit", 0, 0, 1700);
+      const attack = r.str("attack", "");
+      const cycles = cyclesFor(every, ctx.hyper);
+      const counter = dc.take("the spawn timer");
+      const triggers = [];
+      for (const p of players2) {
+        const loc = location.replace(/\{p\}/g, String(p));
+        if (attack) r.location("attack", attack);
+        const owner = /^each$/i.test(ownerRaw) ? p : /^computer$/i.test(ownerRaw) ? ctx.computers[0] ?? p : Number(ownerRaw) || p;
+        const conditions = [c.deaths(p, counter, "At least", cycles)];
+        if (limit > 0) conditions.push(c.command(owner, unit, "At most", limit - 1));
+        const actions = [a.setDeaths(p, counter, "Set To", 0), a.create(owner, unit, count, loc)];
+        if (attack) actions.push(a.order(owner, unit, loc, attack, "attack"));
+        actions.push(a.preserve());
+        triggers.push(trigger([p], conditions, actions));
+        triggers.push(trigger([p], [], [a.setDeaths(p, counter, "Add", 1), a.preserve()]));
+      }
+      return { triggers, notes: [`spawn timer: ${cycles} trigger cycles \u2248 ${every} s ${ctx.hyper ? "with" : "without"} hyper triggers`] };
+    }
+  },
+  {
+    spec: {
+      kind: "kill-to-cash",
+      description: "Pay minerals (and gas) for kills. Watches the player's kill score and pays each time it passes `scorePerKill`, subtracting that much score \u2014 so units worth more kill score pay more often. Kill score is roughly the unit's cost (a Marine 100, a Zergling 50, a Hydralisk 175).",
+      params: [P("minerals", "minerals per payment (default 10)"), P("gas", "gas per payment (default 0)"), P("scorePerKill", "kill score per payment (default 100)"), P("players", "humans (default), all, or player numbers"), P("message", "text shown on each payment (default none)")]
+    },
+    build(r) {
+      const minerals = r.int("minerals", 10, 0);
+      const gas = r.int("gas", 0, 0);
+      const per = r.int("scorePerKill", 100, 1);
+      const players2 = r.players("players");
+      const message = r.str("message", "");
+      const actions = [a.setScore(CUR, "Subtract", per, "Kills")];
+      if (minerals > 0) actions.push(a.setResources(CUR, "Add", minerals, "ore"));
+      if (gas > 0) actions.push(a.setResources(CUR, "Add", gas, "gas"));
+      if (message) actions.push(a.text(message));
+      actions.push(a.preserve());
+      return { triggers: [trigger(players2, [c.score(CUR, "Kills", "At least", per)], actions)] };
+    }
+  },
+  {
+    spec: {
+      kind: "income",
+      description: "Resources on a timer for players: `minerals` every `every` seconds.",
+      params: [P("minerals", "minerals per tick (default 50)"), P("gas", "gas per tick (default 0)"), P("every", "seconds between ticks (default 30)"), P("players", "humans (default), all, or player numbers"), P("perUnit", "a unit or building each player must command at least one of, or no income (default none)")]
+    },
+    build(r, ctx, dc) {
+      const minerals = r.int("minerals", 50, 0);
+      const gas = r.int("gas", 0, 0);
+      const every = r.int("every", 30, 1, 3600);
+      const players2 = r.players("players");
+      const perUnit = r.str("perUnit", "");
+      const cycles = cyclesFor(every, ctx.hyper);
+      const counter = dc.take("the income timer");
+      const conditions = [c.deaths(CUR, counter, "At least", cycles)];
+      if (perUnit) conditions.push(c.command(CUR, perUnit, "At least", 1));
+      const actions = [a.setDeaths(CUR, counter, "Set To", 0)];
+      if (minerals > 0) actions.push(a.setResources(CUR, "Add", minerals, "ore"));
+      if (gas > 0) actions.push(a.setResources(CUR, "Add", gas, "gas"));
+      actions.push(a.preserve());
+      return { triggers: [trigger(players2, conditions, actions), trigger(players2, [], [a.setDeaths(CUR, counter, "Add", 1), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "last-standing",
+      description: "The melee ending for a scenario: a player who commands none of `unit` is defeated; a player with no opponents left wins. Use `unit: Buildings` for a base game, a hero's name for a hero game, `Any unit` otherwise.",
+      params: [P("unit", "what a player must keep to stay in (default Any unit)"), P("players", "humans (default) or player numbers"), P("grace", "seconds before elimination can happen, so a slow start is not a loss (default 10)")]
+    },
+    build(r) {
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      const grace = r.int("grace", 10, 0, 3600);
+      return {
+        triggers: [
+          trigger(players2, [c.command(CUR, unit, "Exactly", 0), c.elapsed("At least", grace)], [a.defeat()]),
+          trigger(players2, [c.opponents(CUR, "Exactly", 0), c.elapsed("At least", grace)], [a.victory()])
+        ],
+        notes: ["Opponents counts players who are neither allied for victory nor gone; allies in a force with Allied Victory win together"]
+      };
+    }
+  },
+  {
+    spec: {
+      kind: "defeat-when-lost",
+      description: "A player is defeated when they command none of `unit` (a hero, a base building).",
+      params: [P("unit", "the unit that must survive", true), P("players", "humans (default) or player numbers"), P("grace", "seconds before it can happen (default 5)"), P("message", "text shown to everyone when it happens (default none)")]
+    },
+    build(r) {
+      const unit = r.str("unit");
+      const players2 = r.players("players");
+      const grace = r.int("grace", 5, 0, 3600);
+      const message = r.str("message", "");
+      const actions = message ? [a.text(message), a.defeat()] : [a.defeat()];
+      return { triggers: [trigger(players2, [c.command(CUR, unit, "Exactly", 0), c.elapsed("At least", grace)], actions)] };
+    }
+  },
+  {
+    spec: {
+      kind: "victory-on-kills",
+      description: "Victory for a player who has killed `count` of `unit`; everyone else is defeated.",
+      params: [P("count", "kills needed", true), P("unit", "what counts (default Any unit)"), P("players", "humans (default) or player numbers")]
+    },
+    build(r) {
+      const count = r.int("count", 0, 1);
+      if (count <= 0) r.problems.push('"count" must be at least 1');
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      const others = players2.length > 1;
+      return {
+        triggers: [
+          trigger(players2, [c.kill(CUR, unit, "At least", count)], [a.victory()]),
+          ...others ? [trigger(players2, [c.kill("Foes", unit, "At least", count)], [a.defeat()])] : []
+        ],
+        notes: others ? ["the losers see Defeat when a foe reaches the count"] : []
+      };
+    }
+  },
+  {
+    spec: {
+      kind: "countdown",
+      description: "A countdown timer from the start; when it ends, victory or defeat, or a draw. `onEnd` is `victory:humans`, `victory:Force 2`, `victory:1,3`, `defeat:humans` or `draw`.",
+      params: [P("seconds", "how long", true), P("onEnd", "what happens at zero (default draw)"), P("message", "text shown when it ends (default none)")]
+    },
+    build(r, ctx) {
+      const seconds = r.int("seconds", 0, 1, 86400);
+      const onEnd = r.str("onEnd", "draw");
+      const message = r.str("message", "");
+      const triggers = [trigger(["All Players"], [], [a.countdown("Set To", seconds)])];
+      const m = /^(victory|defeat)\s*:\s*(.+)$/i.exec(onEnd);
+      const end = (owners, act) => trigger(owners, [c.countdown("Exactly", 0)], message ? [a.text(message), act] : [act]);
+      if (!m) {
+        triggers.push(end(["All Players"], "Draw()"));
+      } else {
+        const who = m[2].trim();
+        const owners = /^humans?$/i.test(who) ? ctx.humans : /^computers?$/i.test(who) ? ctx.computers : /^force\s*[1-4]$/i.test(who) ? [`Force ${who.replace(/\D/g, "")}`] : who.split(/[,\s]+/).map(Number).filter((n2) => n2 >= 1 && n2 <= 12);
+        const winners = m[1].toLowerCase() === "victory";
+        triggers.push(end(owners, winners ? a.victory() : a.defeat()));
+        const rest = ctx.humans.filter((p) => !owners.includes(p) && !(typeof owners[0] === "string"));
+        if (winners && rest.length > 0) triggers.push(end(rest, a.defeat()));
+      }
+      return { triggers };
+    }
+  },
+  {
+    spec: {
+      kind: "objectives",
+      description: "Set Mission Objectives for the players at the start.",
+      params: [P("text", "the objectives, lines separated by \\n", true), P("players", "humans (default), all, or player numbers")]
+    },
+    build(r) {
+      const text = r.str("text").replace(/\\n/g, "\n");
+      const players2 = r.players("players");
+      return { triggers: [trigger(players2, [], [a.objectives(text)])] };
+    }
+  },
+  {
+    spec: {
+      kind: "message",
+      description: "Show a text message to players at a moment: at the start, after `after` seconds, or when a player brings a unit to `location`.",
+      params: [P("text", "what to show", true), P("after", "seconds from the start (default 0)"), P("location", "show it when the player brings a unit here instead (default none)"), P("players", "humans (default), all, or player numbers"), P("once", "yes (default) or no: show it every time")]
+    },
+    build(r) {
+      const text = r.str("text");
+      const after = r.int("after", 0, 0, 86400);
+      const location = r.str("location", "");
+      const players2 = r.players("players");
+      const once = r.bool("once", true);
+      const conditions = location ? [c.bring(CUR, "Any unit", r.location("location"), "At least", 1)] : after > 0 ? [c.elapsed("At least", after)] : [];
+      return { triggers: [trigger(players2, conditions, once ? [a.text(text)] : [a.text(text), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "lives",
+      description: "Shared lives for a defense map: an enemy unit reaching `goal` is removed and costs a life; at zero lives the players are defeated. The count is a death counter on the enemy slot.",
+      params: [P("lives", "how many (default 20)", true), P("goal", "the location the enemies try to reach", true), P("enemy", "the player whose units leak (default computer)"), P("unit", "what counts as a leak (default Any unit)"), P("players", "who is defeated at zero (default humans)")]
+    },
+    build(r, _ctx, dc) {
+      const lives = r.int("lives", 20, 1, 1e3);
+      const goal = r.location("goal");
+      const enemy = r.onePlayer("enemy", "computer");
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      const counter = dc.take("the lives counter");
+      return {
+        triggers: [
+          trigger([enemy], [], [a.setDeaths(enemy, counter, "Set To", lives)]),
+          trigger([enemy], [c.bring(enemy, unit, goal, "At least", 1)], [a.removeAt(enemy, unit, "All", goal), a.setDeaths(enemy, counter, "Subtract", 1), a.preserve()]),
+          trigger(players2, [c.deaths(enemy, counter, "Exactly", 0), c.elapsed("At least", 5)], [a.text("No lives left."), a.defeat()])
+        ],
+        notes: ["several leaks in one cycle cost one life; the lives counter is not shown \u2014 add a `leaderboard` of kind points or a `message` if the players should see it"]
+      };
+    }
+  },
+  {
+    spec: {
+      kind: "waves",
+      description: "Defense waves: every `interval` seconds the enemy spawns a wave at `spawn` and attack-moves it to `goal`; each wave is bigger than the last and cycles through `units`. Victory for the players when the last wave is dead.",
+      params: [P("spawn", "where waves appear", true), P("goal", "where they attack toward", true), P("units", "unit names, comma-separated, one per wave in turn", true), P("waves", "how many (default 10)"), P("interval", "seconds between waves (default 45)"), P("count", "units in the first wave (default 6)"), P("growth", "more units per wave (default 2)"), P("enemy", "the spawning player (default computer)"), P("players", "who wins at the end (default humans)"), P("announce", 'yes (default) or no: show "Wave N"')]
+    },
+    build(r, _ctx, dc) {
+      const spawn = r.location("spawn");
+      const goal = r.location("goal");
+      const units = r.list("units");
+      if (units.length === 0) r.problems.push('"units" needs at least one unit name');
+      const waves = r.int("waves", 10, 1, 100);
+      const interval = r.int("interval", 45, 5, 3600);
+      const count = r.int("count", 6, 1, 200);
+      const growth = r.int("growth", 2, 0, 100);
+      const enemy = r.onePlayer("enemy", "computer");
+      const players2 = r.players("players");
+      const announce = r.bool("announce", true);
+      const counter = dc.take("the wave counter");
+      const triggers = [];
+      for (let k = 1; k <= waves; k++) {
+        const unit = units[(k - 1) % Math.max(1, units.length)] ?? "Zerg Zergling";
+        const n2 = Math.min(200, count + growth * (k - 1));
+        const actions = [a.setDeaths(enemy, counter, "Set To", k), a.create(enemy, unit, n2, spawn), a.order(enemy, "Any unit", spawn, goal, "attack")];
+        if (announce) actions.unshift(a.text(`Wave ${k}: ${n2} ${unit}`));
+        triggers.push(trigger([enemy], [c.elapsed("At least", interval * k), c.deaths(enemy, counter, "Exactly", k - 1)], actions));
+      }
+      triggers.push(trigger(players2, [c.deaths(enemy, counter, "At least", waves), c.command(enemy, "Any unit", "Exactly", 0), c.elapsed("At least", interval * waves + 10)], [a.text("The last wave is dead."), a.victory()]));
+      return { triggers, notes: [`${waves} waves, the last at ${interval * waves} s; the enemy player must own nothing else, or the victory never comes`] };
+    }
+  },
+  {
+    spec: {
+      kind: "shop",
+      description: "Buy a unit: a player who brings `buyer` to `location` with `price` minerals pays and gets `unit` at `deliver`.",
+      params: [P("location", "the shop's beacon location", true), P("unit", "what is sold", true), P("price", "minerals (default 100)"), P("gas", "gas (default 0)"), P("buyer", "which unit must stand on the beacon (default Any unit)"), P("deliver", "where the bought unit appears (default the shop location)"), P("players", "humans (default) or player numbers")]
+    },
+    build(r) {
+      const location = r.location("location");
+      const unit = r.str("unit");
+      const price = r.int("price", 100, 0);
+      const gas = r.int("gas", 0, 0);
+      const buyer = r.str("buyer", "Any unit");
+      const deliver = r.location("deliver", location);
+      const players2 = r.players("players");
+      const conditions = [c.bring(CUR, buyer, location, "At least", 1)];
+      if (price > 0) conditions.push(c.accumulate(CUR, "At least", price, "ore"));
+      if (gas > 0) conditions.push(c.accumulate(CUR, "At least", gas, "gas"));
+      const actions = [];
+      if (price > 0) actions.push(a.setResources(CUR, "Subtract", price, "ore"));
+      if (gas > 0) actions.push(a.setResources(CUR, "Subtract", gas, "gas"));
+      actions.push(a.create(CUR, unit, 1, deliver), a.move(CUR, buyer, "All", location, deliver), a.preserve());
+      return { triggers: [trigger(players2, conditions, actions)], notes: ["the buyer is moved off the beacon after the purchase so one visit buys one unit"] };
+    }
+  },
+  {
+    spec: {
+      kind: "heal",
+      description: "A heal spot: a player's units standing on `location` are restored to full hit points (and shields).",
+      params: [P("location", "where", true), P("unit", "what is healed (default Any unit)"), P("players", "humans (default) or player numbers")]
+    },
+    build(r) {
+      const location = r.location("location");
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      return { triggers: [trigger(players2, [c.bring(CUR, unit, location, "At least", 1)], [a.hp(CUR, unit, 100, "All", location), a.shields(CUR, unit, 100, "All", location), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "respawn",
+      description: "When a player has none of `unit` left, a new one appears at `location` (optionally a limited number of times).",
+      params: [P("unit", "the hero", true), P("location", "where it comes back", true), P("lives", "how many respawns before it stops (default unlimited)"), P("players", "humans (default) or player numbers"), P("message", "text on respawn (default none)")]
+    },
+    build(r, _ctx, dc) {
+      const unit = r.str("unit");
+      const location = r.location("location");
+      const lives = r.int("lives", 0, 0, 1e3);
+      const players2 = r.players("players");
+      const message = r.str("message", "");
+      const conditions = [c.command(CUR, unit, "Exactly", 0), c.elapsed("At least", 3)];
+      const actions = [a.create(CUR, unit, 1, location)];
+      if (message) actions.push(a.text(message));
+      if (lives > 0) {
+        const counter = dc.take("the respawn counter");
+        conditions.push(c.deaths(CUR, counter, "At most", lives - 1));
+        actions.push(a.setDeaths(CUR, counter, "Add", 1));
+      }
+      actions.push(a.preserve());
+      return { triggers: [trigger(players2, conditions, actions)] };
+    }
+  },
+  {
+    spec: {
+      kind: "leaderboard",
+      description: "The in-game leaderboard: `kind` kills, control (units owned), resources or points.",
+      params: [P("kind", "kills (default), control, resources or points"), P("label", "the heading (default by kind)"), P("unit", "for kills and control: which unit (default Any unit)"), P("players", "humans (default), all, or player numbers")]
+    },
+    build(r) {
+      const kind = r.str("kind", "kills").toLowerCase();
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      let action;
+      switch (kind) {
+        case "control":
+          action = a.lbControl(r.str("label", "Units"), unit);
+          break;
+        case "resources":
+          action = a.lbResources(r.str("label", "Minerals"), "ore");
+          break;
+        case "points":
+          action = a.lbPoints(r.str("label", "Score"), "Total");
+          break;
+        case "kills":
+          action = a.lbKills(r.str("label", "Kills"), unit);
+          break;
+        default:
+          r.problems.push(`"kind" should be kills, control, resources or points, not "${kind}"`);
+          action = a.lbKills("Kills", unit);
+      }
+      return { triggers: [trigger(players2, [], [action])] };
+    }
+  },
+  {
+    spec: {
+      kind: "teleport",
+      description: "A unit brought to `from` is moved to `to`.",
+      params: [P("from", "the entry location", true), P("to", "the exit location", true), P("unit", "what moves (default Any unit)"), P("players", "humans (default), all, or player numbers")]
+    },
+    build(r) {
+      const from = r.location("from");
+      const to = r.location("to");
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      return { triggers: [trigger(players2, [c.bring(CUR, unit, from, "At least", 1)], [a.move(CUR, unit, "All", from, to), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "kill-zone",
+      description: "Units entering `location` die (a pit, lava, the edge of a bound).",
+      params: [P("location", "where", true), P("unit", "what dies (default Any unit)"), P("players", "whose units (default all)")]
+    },
+    build(r) {
+      const location = r.location("location");
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players", "all");
+      return { triggers: [trigger(players2, [c.bring(CUR, unit, location, "At least", 1)], [a.killAt(CUR, unit, "All", location), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "alliance",
+      description: "Set alliances at the start: `players` treat `with` as `status` (Ally, Enemy or Allied Victory).",
+      params: [P("players", "who is setting it (default humans)"), P("with", "toward whom: a player number, computer, humans, or Force N", true), P("status", "Ally (default), Enemy or Allied Victory")]
+    },
+    build(r, ctx) {
+      const players2 = r.players("players");
+      const withRaw = r.str("with");
+      const status = r.str("status", "Ally");
+      const st = /victory/i.test(status) ? "Allied Victory" : /enemy/i.test(status) ? "Enemy" : "Ally";
+      const targets = /^humans?$/i.test(withRaw) ? ctx.humans : /^computers?$/i.test(withRaw) ? ctx.computers : /^force\s*[1-4]$/i.test(withRaw) ? [`Force ${withRaw.replace(/\D/g, "")}`] : withRaw.split(/[,\s]+/).map(Number).filter((n2) => n2 >= 1 && n2 <= 12);
+      if (targets.length === 0) r.problems.push(`"with" should name players, not "${withRaw}"`);
+      return { triggers: [trigger(players2, [], targets.map((t) => a.alliance(t, st)))] };
+    }
+  },
+  {
+    spec: {
+      kind: "auto-attack",
+      description: "Keep a player's units moving: every cycle, order all of `unit` at `from` to attack-move to `to`. What makes a madness map's spawns fight by themselves.",
+      params: [P("owner", "whose units (a player number or computer)", true), P("from", "where they are (Anywhere for all of them)", true), P("to", "where they go", true), P("unit", "which units (default Any unit)"), P("order", "attack (default), move or patrol")]
+    },
+    build(r) {
+      const owner = r.onePlayer("owner");
+      const from = r.location("from");
+      const to = r.location("to");
+      const unit = r.str("unit", "Any unit");
+      const order = r.str("order", "attack").toLowerCase();
+      const ord = order === "move" || order === "patrol" ? order : "attack";
+      return { triggers: [trigger([owner], [], [a.order(owner, unit, from, to, ord), a.preserve()])] };
+    }
+  },
+  {
+    spec: {
+      kind: "give",
+      description: "Units of `unit` that `from` owns at `location` are given to the player who brings a unit there (rescue by touch, a hired unit).",
+      params: [P("location", "where", true), P("from", "the owner giving them (default computer)"), P("unit", "what is given (default Any unit)"), P("players", "who can take them (default humans)"), P("touch", "the unit that must be brought to take them (default Any unit)")]
+    },
+    build(r) {
+      const location = r.location("location");
+      const from = r.onePlayer("from", "computer");
+      const unit = r.str("unit", "Any unit");
+      const players2 = r.players("players");
+      const touch = r.str("touch", "Any unit");
+      return { triggers: [trigger(players2, [c.bring(CUR, touch, location, "At least", 1), c.bring(from, unit, location, "At least", 1)], [a.give(from, CUR, unit, "All", location), a.preserve()])] };
+    }
+  }
+];
+function systemKinds() {
+  return KINDS.map((k) => k.spec);
+}
+function buildSystem(kind, params, ctx, dc = new Counters(ctx)) {
+  const k = KINDS.find((x) => x.spec.kind === kind);
+  if (!k) throw new ToolkitError([`no system kind called "${kind}" (the toolkit has ${KINDS.map((x) => x.spec.kind).join(", ")})`]);
+  const reader = new Reader(k.spec, params, ctx);
+  const before = dc.used.length;
+  const out = k.build(reader, ctx, dc);
+  reader.finish();
+  const text = out.triggers.join("\n");
+  return { text, count: out.triggers.length, notes: [...reader.notes, ...out.notes ?? []], dcUsed: dc.used.slice(before) };
+}
+function paramsOf(list2) {
+  const out = {};
+  for (const p of list2) out[p.key] = p.value;
+  return out;
+}
+function dcUnitsFrom(unitNames2) {
+  const have = new Set(unitNames2.map((n2) => n2.toLowerCase()));
+  return DEFAULT_DC_UNITS.filter((n2) => have.has(n2.toLowerCase()));
+}
+function kindsText() {
+  return KINDS.map((k) => `${k.spec.kind}: ${k.spec.description}
+${k.spec.params.map((p) => `  - ${p.name}${p.required ? " (required)" : ""}: ${p.description}`).join("\n")}`).join("\n\n");
+}
+
+// tools/ums.ts
+function toolkitContext(api, options = {}) {
+  const players2 = api.settings.players();
+  const humans = players2.filter((p) => /human/i.test(p.typeName)).map((p) => p.slot + 1);
+  const computers = players2.filter((p) => /computer/i.test(p.typeName)).map((p) => p.slot + 1);
+  const hyper = options.hyper ?? api.triggers.list().some((t) => t.actions.filter((a2) => a2.type === api.consts.triggers.action.Wait && a2.time <= 1).length >= 8);
+  const locations = [...usedLocationNames(api), ...options.extraLocations ?? []];
+  return { humans: humans.length ? humans : [1], computers, hyper, dcUnits: dcUnitsFrom(api.names.units().map((u) => u.label)), locations };
+}
+function usedLocationNames(api) {
+  const scn = api.document.scenario();
+  if (!scn) return [];
+  const out = [];
+  scn.locations.forEach((l, i) => {
+    if (l.left !== l.right || l.top !== l.bottom || l.nameIndex > 0) out.push(api.names.location(i));
+  });
+  return out;
+}
+function addSystem(api, kind, params, ctx, label = `AI: ${kind}`) {
+  const built = buildSystem(kind, params, ctx);
+  const parsed = api.triggers.text.parse(built.text, { briefing: false });
+  api.document.update(label, (tx) => {
+    for (const t of parsed) tx.triggers.add(t.trigger);
+  });
+  return { count: parsed.length, notes: built.notes };
+}
+function umsTools() {
+  return [
+    {
+      def: { name: "guide", description: "Read a genre guide before designing or judging a scenario: how a madness map, a defense, an RPG, a bound, a diplomacy map, an arena or a survival map is built, its players and forces, the trigger systems it runs on (by toolkit kind), and the pitfalls. `id` is one of the guides, or a free description of the map to pick the nearest; no id lists them. `basics` is death counters, hyper triggers, locations and the game's limits.", inputSchema: obj({ id: { type: "string" } }) },
+      writes: false,
+      run: (input) => {
+        const id = str(input.id);
+        if (!id) return `The guides:
+${guideIndex()}
+
+Ask for one by id, or describe the map.`;
+        const g = guideById(id) ?? guideFor(id);
+        return g ? g.text : `No guide matches "${id}". The guides:
+${guideIndex()}`;
+      }
+    },
+    {
+      def: { name: "ums_kinds", description: "The toolkit of trigger systems the editor builds by itself \u2014 hyper triggers, spawns, kill-to-cash, income, waves, lives, shops, heal, respawn, teleport, kill zones, leaderboards, countdowns, last standing, alliances \u2014 with each kind's parameters. Use ums_build for these instead of writing the triggers by hand.", inputSchema: obj({}) },
+      writes: false,
+      run: () => kindsText()
+    },
+    {
+      def: { name: "ums_build", description: "Build one trigger system from the toolkit (see ums_kinds) and append its triggers to the map. `params` are the kind's parameters as strings \u2014 a location or unit by name, a number as digits, a list comma-separated; `{p}` in a location name means the player number. Problems are reported and nothing is added. Not undoable.", inputSchema: obj({ kind: { type: "string" }, params: { type: "object", additionalProperties: { type: "string" } } }, ["kind"]) },
+      writes: true,
+      settings: true,
+      run: (input, { api }) => {
+        const kind = str(input.kind);
+        const raw = input.params && typeof input.params === "object" ? input.params : {};
+        const params = {};
+        for (const [k, v] of Object.entries(raw)) params[k] = Array.isArray(v) ? v.join(", ") : String(v);
+        try {
+          const r = addSystem(api, kind, params, toolkitContext(api));
+          return capResult({ added: r.count, triggers: api.triggers.list().length, notes: r.notes });
+        } catch (err) {
+          if (err instanceof ToolkitError) return `Not built:
+${err.problems.map((p) => `- ${p}`).join("\n")}`;
+          return `Not built: ${err.message}`;
+        }
+      }
+    }
+  ];
+}
+
 // tools.ts
 function tools() {
-  return [...readTools(), ...terrainTools(), ...objectTools(), ...triggerTools(), ...settingsTools(), ...scriptTools()];
+  return [...readTools(), ...terrainTools(), ...objectTools(), ...triggerTools(), ...umsTools(), ...settingsTools(), ...scriptTools()];
 }
 
 // assistant.ts
 var KEEP_MESSAGES = 60;
-function trimHistory(messages, keep = KEEP_MESSAGES) {
+var TRIM_TO = 40;
+var KEEP_IMAGES = 2;
+function trimHistory(messages, keep = KEEP_MESSAGES, to = TRIM_TO) {
   if (messages.length <= keep) return messages;
-  let start = messages.length - keep;
-  while (start < messages.length && (messages[start].role !== "user" || messages[start].content.some((c) => c.type === "tool_result"))) start++;
-  return messages.slice(start);
+  let start = Math.max(0, messages.length - Math.min(to, keep));
+  while (start < messages.length && (messages[start].role !== "user" || messages[start].content.some((c2) => c2.type === "tool_result"))) start++;
+  return pruneImages(messages.slice(start), KEEP_IMAGES);
 }
-var QUICK_PROMPTS = [
-  { label: "Describe", text: "Describe this map: what kind of map it is, its layout, players and what the triggers do. Look at a screenshot first." },
-  { label: "Check", text: "Check the map for problems: run the checker, look at the picture, the players and the triggers, and list what you would fix, most important first. Do not change anything yet." },
-  { label: "Balance", text: "Is this melee map fair? Compare every start location's resources, distances and chokes and say what is uneven." },
-  { label: "Selection", text: "Tell me about what I have selected." },
-  { label: "Triggers", text: "Explain what the triggers do, in play order, briefly." }
-];
-var isText = (c) => c.type === "text";
+function pruneImages(messages, keepLast) {
+  let seen = 0;
+  const out = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    let changed = false;
+    const content = m.content.map((c2) => {
+      if (c2.type === "image") {
+        seen++;
+        if (seen > keepLast) {
+          changed = true;
+          return { type: "text", text: "(a picture that was here is no longer kept)" };
+        }
+        return c2;
+      }
+      if (c2.type === "tool_result" && Array.isArray(c2.content)) {
+        let inner = false;
+        const parts = c2.content.map((p) => {
+          if (p.type === "image") {
+            seen++;
+            if (seen > keepLast) {
+              inner = true;
+              return { type: "text", text: "(picture no longer kept)" };
+            }
+          }
+          return p;
+        });
+        if (inner) {
+          changed = true;
+          return { ...c2, content: parts };
+        }
+      }
+      return c2;
+    });
+    out.unshift(changed ? { ...m, content } : m);
+  }
+  return out;
+}
+function chipsFor(layer, selected, triggers) {
+  const chips2 = [
+    { label: "Describe", text: "Describe this map: what kind of map it is, its layout, players and what the triggers do. Look at a screenshot first." },
+    { label: "Check", text: "Check the map for problems: run the checker, look at the picture, the players and the triggers, and list what you would fix, most important first. Do not change anything yet." }
+  ];
+  if (selected > 0) chips2.push({ label: "Selection", text: "Tell me about what I have selected." });
+  switch (layer) {
+    case "terrain":
+      chips2.push({ label: "Terrain", text: "Look at the terrain in view: heights, chokes, dead ends, and what you would change." });
+      break;
+    case "units":
+      chips2.push(selected > 0 ? { label: "Balance", text: "Is this melee map fair? Compare every start location's resources, distances and chokes and say what is uneven." } : { label: "Bases", text: "List the bases: each start location with its mineral count, geysers and the nearest expansion." });
+      break;
+    case "locations":
+      chips2.push({ label: "Locations", text: "List the locations and which triggers use each; point out any that nothing uses." });
+      break;
+    case "fog":
+      chips2.push({ label: "Fog", text: "Which players start with which parts of the map explored? Is it even?" });
+      break;
+    default:
+      break;
+  }
+  if (triggers > 0) chips2.push({ label: "Triggers", text: "Explain what the triggers do, in play order, briefly." });
+  else chips2.push({ label: "Scenario", text: "I want to turn this into a scenario. Read the guide for the genre I name, then propose the players, locations and systems before changing anything." });
+  return chips2;
+}
+var QUICK_PROMPTS = chipsFor("terrain", 0, 0);
+var PHASE_LABELS = { idle: "Ready", waiting: "Waiting for the model", thinking: "Thinking", writing: "Writing", tools: "Working on the map", stopped: "Stopped", failed: "Failed" };
+var isText = (c2) => c2.type === "text";
+function intentOverlay(api) {
+  let footprint = null;
+  const handle = api.ui.overlay({
+    name: "AI activity",
+    above: "objects",
+    visible: true,
+    draw(ctx, view) {
+      if (!footprint) return;
+      const scn = api.document.scenario();
+      const boxes = footprint.rects.map((r) => ({ l: r.x0 * 32, t: r.y0 * 32, r: r.x1 * 32, b: r.y1 * 32 }));
+      if (scn) {
+        for (const i of footprint.units) {
+          const u = scn.units[i];
+          if (u) boxes.push({ l: u.x - 16, t: u.y - 16, r: u.x + 16, b: u.y + 16 });
+        }
+        for (const i of footprint.locations) {
+          const l = scn.locations[i];
+          if (l && i !== 63) boxes.push({ l: Math.min(l.left, l.right), t: Math.min(l.top, l.bottom), r: Math.max(l.left, l.right), b: Math.max(l.top, l.bottom) });
+        }
+      }
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.lineDashOffset = -(Date.now() / 40 % 10);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(79, 209, 197, 0.95)";
+      ctx.fillStyle = "rgba(79, 209, 197, 0.10)";
+      for (const b of boxes) {
+        const x = view.x(b.l), y = view.y(b.t), w = (b.r - b.l) * view.zoom, hgt = (b.b - b.t) * view.zoom;
+        ctx.fillRect(x, y, w, hgt);
+        ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w) - 1, Math.round(hgt) - 1);
+      }
+      ctx.restore();
+    }
+  });
+  return { handle, show: (f) => {
+    footprint = f && !footprintEmpty(f) ? f : null;
+    handle.redraw();
+  } };
+}
 function openAssistant(ctx, state) {
   const { api } = ctx;
   const w = api.ui.widgets;
   const toolList = tools();
   const byName2 = new Map(toolList.map((t) => [t.def.name, t]));
   let running = null;
-  let spent = 0;
   let askLater = null;
+  const dock = ctx.settings().dockAssistant;
   const handle = api.ui.panel({
     title: "AI Assistant",
     width: 440,
+    dock: dock ? "right" : "float",
+    grow: true,
     mount(body) {
       const root = styled(body);
-      const chat = h("div", { className: "ai-chat" });
-      const input = h("textarea", { rows: 3, placeholder: "Ask about the map, or say what to change. Shift+Enter for a new line." });
-      const status = h("div", { className: "ai-hint" }, "Nothing sent yet.");
-      const context = h("div", { className: "ai-context" });
-      const send = w.button("Send", { primary: true, onClick: () => void submit() });
-      const stop = w.button("Stop", { ghost: true, onClick: () => running?.abort() });
-      stop.hidden = true;
-      const more = w.button("Continue", { onClick: () => void submit("Continue.") });
-      more.hidden = true;
-      const clearButton = w.button("Clear", { ghost: true, title: "Forget the conversation", onClick: () => {
-        state.messages = [];
-        chat.replaceChildren();
-        status.textContent = "Cleared.";
-        more.hidden = true;
-      } });
-      const copyButton = w.button("Copy", { ghost: true, title: "Copy the transcript as text", onClick: () => {
-        void navigator.clipboard?.writeText(transcript()).then(() => {
-          status.textContent = "Transcript copied.";
-        });
-      } });
-      const attach = w.checkbox("Picture", { value: ctx.settings().attachView, title: "Send a picture of the visible area with the message" });
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          void submit();
+      root.classList.add("ai-assistant");
+      const intent = intentOverlay(api);
+      const phaseLabel = h("span", { className: "ai-phase" }, "Ready");
+      const phaseDetail = h("span", { className: "ai-dim ai-grow ai-phase-detail" }, "");
+      const clock = h("span", { className: "ai-dim ai-mono" }, "");
+      const cost = h("span", { className: "ai-pill", title: "What this panel has cost \xB7 what the session has cost" }, "");
+      const shimmer = h("div", { className: "ai-shimmer", hidden: true }, h("i"));
+      const strip = h("div", { className: "ai-state is-idle" }, h("div", { className: "ai-state-line" }, phaseLabel, phaseDetail, clock, cost), shimmer);
+      let phase = "idle";
+      let startedAt = 0;
+      let clockTimer = null;
+      const setCost = () => {
+        cost.textContent = state.spent ? `${formatUsd(state.spent)} here \xB7 ${formatUsd(ctx.ledger.totals.costUsd)} session` : ctx.ledger.totals.calls ? `${formatUsd(ctx.ledger.totals.costUsd)} session` : "";
+      };
+      const tickClock = () => {
+        clock.textContent = startedAt ? `${Math.round((Date.now() - startedAt) / 1e3)} s` : "";
+      };
+      const setPhase = (next, detail = "") => {
+        phase = next;
+        strip.className = `ai-state is-${next}`;
+        phaseLabel.textContent = PHASE_LABELS[next];
+        phaseDetail.textContent = detail;
+        const busy = next === "waiting" || next === "thinking" || next === "writing" || next === "tools";
+        shimmer.hidden = !busy;
+        if (busy && clockTimer === null) {
+          tickClock();
+          clockTimer = window.setInterval(tickClock, 1e3);
         }
-      });
-      const transcript = () => state.messages.map((m) => m.content.filter(isText).map((c) => `${m.role === "user" ? "You" : "Assistant"}: ${c.text}`).join("\n")).filter(Boolean).join("\n\n");
+        if (!busy && clockTimer !== null) {
+          window.clearInterval(clockTimer);
+          clockTimer = null;
+          clock.textContent = "";
+        }
+        ctx.presence?.set({ text: busy ? `AI \xB7 ${PHASE_LABELS[next].toLowerCase()}${detail ? ` \xB7 ${detail}` : ""}` : state.spent ? `AI \xB7 ${formatUsd(state.spent)}` : "AI", busy, warn: next === "failed" });
+        setCost();
+      };
+      setCost();
+      const chat = h("div", { className: "ai-chat" });
       const scroll = () => {
         chat.scrollTop = chat.scrollHeight;
       };
@@ -3462,39 +4565,96 @@ function openAssistant(ctx, state) {
         scroll();
         return el;
       };
-      const addThinking = (text) => {
-        if (!text.trim() || !ctx.settings().showThinking) return;
-        chat.append(h("details", null, h("summary", null, "Reasoning"), h("div", { className: "ai-body" }, text)));
-        scroll();
+      const addThinking = () => {
+        if (!ctx.settings().showThinking) return () => {
+        };
+        let fold = null;
+        let foldBody = null;
+        return (text) => {
+          if (!text) return;
+          if (!fold) {
+            foldBody = h("div", { className: "ai-body" });
+            fold = h("details", null, h("summary", null, "Reasoning"), foldBody);
+            chat.append(fold);
+          }
+          foldBody.append(document.createTextNode(text));
+          scroll();
+        };
       };
-      const addTool = (tool, call) => {
-        const mark = h("span", null, "\u2026");
-        const row = h("div", { className: "ai-tool", title: call }, h("span", { className: tool?.writes ? tool.settings ? "ai-gold" : "ai-gold" : "ai-dim", title: tool?.writes ? tool.settings ? "changes the map (a settings transaction, not undoable)" : "changes the map (one undo step)" : "reads" }, tool?.writes ? tool.settings ? "\u270E" : "\u270E" : "\u25B8"), h("code", null, call), mark);
+      const addTool = (tool, call, pending) => {
+        const mark = h("span", { className: pending ? "ai-tool-mark ai-spin" : "ai-tool-mark" }, pending ? "" : "\u2026");
+        const code = h("code", null, call);
+        const row = h(
+          "div",
+          { className: `ai-tool${pending ? " is-pending" : ""}`, title: call },
+          h("span", { className: tool?.writes ? "ai-gold" : "ai-dim", title: tool?.writes ? tool.settings ? "changes the map (a settings transaction, not undoable)" : "changes the map (one undo step)" : "reads" }, tool?.writes ? "\u270E" : "\u25B8"),
+          code,
+          mark
+        );
         chat.append(row);
         scroll();
-        return { row, mark };
+        return { row, mark, code };
       };
       const addNote = (text, ...extra) => {
         chat.append(h("div", { className: "ai-turn" }, h("span", { className: "ai-grow" }, text), ...extra));
         scroll();
       };
+      const context = h("div", { className: "ai-context" });
+      const chipRow = h("div", { className: "ai-chips" });
+      const input = h("textarea", { rows: 3, placeholder: "Ask about the map, or say what to change. Enter sends, Shift+Enter for a new line, Esc stops." });
       const refreshContext = () => {
-        const lines = api.document.isOpen() ? selectionLines(api) : [];
+        const open = api.document.isOpen();
+        const lines = open ? selectionLines(api) : [];
         context.replaceChildren(h("span", { className: "ai-dim" }, lines.length ? `The model sees: ${lines.join(" \xB7 ")}` : "The model sees the map's state, your selection and the view with every message."));
+        const selected = open ? api.selection.units().length + api.selection.locations().length + api.selection.sprites().length + api.selection.doodads().length + (api.selection.markedArea() ? 1 : 0) : 0;
+        chipRow.replaceChildren(...chipsFor(open ? api.selection.layer() : "terrain", selected, open ? api.triggers.list().length : 0).map((q2) => h("button", { type: "button", className: "ai-chip", title: q2.text, onClick: () => {
+          input.value = q2.text;
+          input.focus();
+        } }, q2.label)));
       };
       refreshContext();
-      const offSel = api.events.on("selection", refreshContext);
-      const offClip = api.events.on("clipboard", refreshContext);
-      const offDoc = api.events.on("document", () => {
-        refreshContext();
+      const offs = [api.events.on("selection", refreshContext), api.events.on("clipboard", refreshContext), api.events.on("document", refreshContext), api.events.on("layer", refreshContext), api.events.on("triggers", refreshContext)];
+      const send = w.button("Send", { primary: true, onClick: () => void submit() });
+      const stop = w.button("Stop", { ghost: true, onClick: () => running?.abort() });
+      stop.hidden = true;
+      const more = w.button("Continue", { onClick: () => void submit("Continue.") });
+      more.hidden = true;
+      const clearButton = w.button("Clear", { ghost: true, title: "Forget the conversation", onClick: () => {
+        state.messages = [];
+        chat.replaceChildren();
+        more.hidden = true;
+        setPhase("idle");
+      } });
+      const copyButton = w.button("Copy", { ghost: true, title: "Copy the transcript as text", onClick: () => {
+        void navigator.clipboard?.writeText(transcript()).then(() => {
+          phaseDetail.textContent = "Transcript copied.";
+        });
+      } });
+      const attach = w.checkbox("Picture", { value: ctx.settings().attachView, title: "Send a picture of the visible area with the message" });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          void submit();
+        }
+        if (e.key === "Escape" && running) {
+          e.preventDefault();
+          running.abort();
+        }
       });
+      root.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && running && e.target !== input) {
+          e.preventDefault();
+          running.abort();
+        }
+      });
+      const transcript = () => state.messages.map((m) => m.content.filter(isText).map((c2) => `${m.role === "user" ? "You" : "Assistant"}: ${c2.text}`).join("\n")).filter(Boolean).join("\n\n");
       for (const m of state.messages) {
-        for (const c of m.content) {
-          if (c.type === "text") {
-            if (m.role === "user") addUser(c.text);
-            else addAssistant(c.text);
-          } else if (c.type === "thinking") addThinking(c.thinking);
-          else if (c.type === "tool_use") addTool(byName2.get(c.name), describeCall(c.name, c.input)).mark.textContent = "\u2713";
+        for (const c2 of m.content) {
+          if (c2.type === "text") {
+            if (m.role === "user") addUser(c2.text);
+            else addAssistant(c2.text);
+          } else if (c2.type === "thinking") addThinking()(c2.thinking);
+          else if (c2.type === "tool_use") addTool(byName2.get(c2.name), describeCall(c2.name, c2.input), false).mark.textContent = "\u2713";
         }
       }
       const viewPicture = async () => {
@@ -3507,12 +4667,52 @@ function openAssistant(ctx, state) {
         const blob = await api.graphics.renderRect(rect, { pixelsPerTile: ppt, units: true, sprites: true, locations: true, locationNames: true, startLocations: true, grid: 0 });
         return blob ? imageInput(blob) : null;
       };
+      const runTool = async (call, row) => {
+        const tool = byName2.get(call.name);
+        const described = describeCall(call.name, call.input ?? {});
+        row.code.textContent = described;
+        row.row.title = described;
+        row.row.classList.remove("is-pending");
+        row.mark.className = "ai-tool-mark ai-spin";
+        row.mark.textContent = "";
+        setPhase("tools", call.name.replace(/_/g, " "));
+        const footprint = footprintOf(api, call.name, call.input ?? {});
+        intent.show(footprint);
+        try {
+          if (!tool) throw new Error(`no tool called ${call.name}`);
+          const out = await tool.run(call.input ?? {}, ctx);
+          if (typeof out !== "string" && out.image) {
+            chat.append(h("div", { className: "ai-shot" }, h("img", { src: `data:${out.image.mediaType};base64,${out.image.data}`, alt: "screenshot" })));
+            scroll();
+          }
+          row.mark.className = "ai-tool-mark";
+          row.mark.textContent = "\u2713";
+          row.row.title = `${described}
+\u2192 ${summarizeResult(out)}`;
+          if (!footprintEmpty(footprint)) {
+            const kind = tool.writes ? "change" : "attention";
+            for (const r of footprint.rects) api.view.flash({ rect: r, kind, ms: tool.writes ? 700 : 400 });
+            if (footprint.units.length) api.view.flash({ units: footprint.units, kind });
+            if (footprint.locations.length) api.view.flash({ locations: footprint.locations, kind });
+          }
+          return { result: toContent(call.id, typeof out === "string" ? capResult(out) : out), tool, failed: false };
+        } catch (err) {
+          row.mark.className = "ai-tool-mark";
+          row.mark.textContent = "\u2717";
+          row.row.classList.add("ai-bad");
+          row.row.title = `${described}
+\u2717 ${err.message}`;
+          return { result: toContent(call.id, `Error: ${err.message}`, true), tool, failed: true };
+        } finally {
+          intent.show(null);
+        }
+      };
       const submit = async (preset) => {
         const text = (preset ?? input.value).trim();
         if (!text || running) return;
         if (!requireServer(ctx)) return;
         if (!api.document.isOpen()) {
-          status.textContent = "Open a map first.";
+          setPhase("failed", "Open a map first.");
           return;
         }
         if (!preset) input.value = "";
@@ -3533,7 +4733,7 @@ function openAssistant(ctx, state) {
         running = new AbortController();
         send.disabled = true;
         stop.hidden = false;
-        const started = Date.now();
+        startedAt = Date.now();
         const historyBefore = api.document.history().undoDepth;
         const edits = [];
         const settingsWrites = [];
@@ -3541,107 +4741,127 @@ function openAssistant(ctx, state) {
         let stoppedAtLimit = false;
         try {
           for (let round = 0; round < maxRounds; round++) {
-            status.textContent = `Asking the model\u2026 (${round === 0 ? "first" : `round ${round + 1}`}, ${Math.round((Date.now() - started) / 1e3)} s)`;
+            setPhase("waiting", round === 0 ? "" : `round ${round + 1}`);
+            let streamed = "";
+            const stream = { el: null };
+            let renderQueued = false;
+            const think = addThinking();
+            const pendingRows = /* @__PURE__ */ new Map();
+            const paint = () => {
+              renderQueued = false;
+              if (stream.el) {
+                stream.el.replaceChildren(renderMarkdown(streamed), h("span", { className: "ai-caret" }));
+                scroll();
+              }
+            };
+            state.messages = trimHistory(state.messages);
             const r = await ctx.client.run("agent", {
-              messages: trimHistory(state.messages),
+              messages: state.messages,
               tools: toolList.map((t) => t.def),
               facts: mapFacts(api, { triggers: false, assistant: true }),
               reference: referenceFor(api)
             }, {
               signal: running.signal,
+              onThinking: (t) => {
+                if (phase === "waiting") setPhase("thinking");
+                think(t);
+              },
+              onDelta: (t) => {
+                if (phase !== "writing") setPhase("writing");
+                streamed += t;
+                if (!stream.el) {
+                  stream.el = h("div", { className: "ai-msg is-assistant" });
+                  chat.append(stream.el);
+                }
+                if (!renderQueued) {
+                  renderQueued = true;
+                  requestAnimationFrame(paint);
+                }
+              },
+              onToolUse: (id, name) => {
+                setPhase("tools", `${name.replace(/_/g, " ")}\u2026`);
+                pendingRows.set(id, addTool(byName2.get(name), `${name}(\u2026)`, true));
+              },
               onProgress: () => {
-                status.textContent = `Asking the model\u2026 (${Math.round((Date.now() - started) / 1e3)} s)`;
+                if (phase === "waiting" || phase === "thinking") tickClock();
               }
             }, recipeOptions(ctx.settings()));
-            spent += r.usage.costUsd;
+            state.spent = (state.spent ?? 0) + r.usage.costUsd;
+            setCost();
             const answer = r.output.content;
             state.messages.push({ role: "assistant", content: answer });
-            for (const c of answer) {
-              if (c.type === "thinking") addThinking(c.thinking);
-              else if (c.type === "text" && c.text.trim()) addAssistant(c.text);
-            }
-            const calls = answer.filter((c) => c.type === "tool_use");
+            const finalText = answer.filter(isText).map((c2) => c2.text).join("\n\n").trim();
+            if (stream.el) {
+              if (finalText) stream.el.replaceChildren(renderMarkdown(finalText));
+              else stream.el.remove();
+            } else if (finalText) addAssistant(finalText);
+            const calls = answer.filter((c2) => c2.type === "tool_use");
             if (r.output.stopReason === "refusal") {
-              status.textContent = "The model declined.";
+              setPhase("failed", "The model declined.");
               break;
             }
             if (calls.length === 0 || r.output.stopReason !== "tool_use") break;
             const results = [];
             for (const call of calls) {
-              const tool = byName2.get(call.name);
-              const { mark, row } = addTool(tool, describeCall(call.name, call.input));
-              status.textContent = `Running ${call.name}\u2026`;
-              try {
-                if (!tool) throw new Error(`no tool called ${call.name}`);
-                const out = await tool.run(call.input ?? {}, ctx);
-                if (typeof out !== "string" && out.image) {
-                  const img = h("img", { src: `data:${out.image.mediaType};base64,${out.image.data}`, alt: "screenshot" });
-                  chat.append(h("div", { className: "ai-shot" }, img));
-                  scroll();
-                }
-                results.push(toContent(call.id, typeof out === "string" ? capResult(out) : out));
-                mark.textContent = "\u2713";
-                row.title = `${describeCall(call.name, call.input)}
-\u2192 ${summarizeResult(out)}`;
-                if (tool.writes) (tool.settings ? settingsWrites : edits).push(call.name);
-              } catch (err) {
-                results.push(toContent(call.id, `Error: ${err.message}`, true));
-                mark.textContent = "\u2717";
-                row.classList.add("ai-bad");
-                row.title = `${describeCall(call.name, call.input)}
-\u2717 ${err.message}`;
-              }
+              const row = pendingRows.get(call.id) ?? addTool(byName2.get(call.name), describeCall(call.name, call.input ?? {}), false);
+              pendingRows.delete(call.id);
+              const { result, tool, failed } = await runTool(call, row);
+              results.push(result);
+              if (tool?.writes && !failed) (tool.settings ? settingsWrites : edits).push(call.name);
+            }
+            for (const row of pendingRows.values()) {
+              row.mark.className = "ai-tool-mark";
+              row.mark.textContent = "\u2717";
+              row.row.title = "The model named this tool but did not call it.";
             }
             state.messages.push({ role: "user", content: results });
             if (round === maxRounds - 1) stoppedAtLimit = true;
           }
-          const secs = Math.round((Date.now() - started) / 1e3);
+          const secs = Math.round((Date.now() - startedAt) / 1e3);
           if (stoppedAtLimit) {
-            status.textContent = `Stopped after ${maxRounds} rounds of tool calls (AI Settings sets the limit).`;
+            setPhase("stopped", `after ${maxRounds} rounds of tool calls; AI Settings sets the limit`);
             more.hidden = false;
-          } else if (!status.textContent.startsWith("The model")) status.textContent = `Done in ${secs} s \xB7 ${formatUsd(spent)} in this panel \xB7 ${ctx.ledger.summary()}`;
+          } else if (phase !== "failed") setPhase("idle", `Done in ${secs} s`);
           const undoSteps = Math.max(0, api.document.history().undoDepth - historyBefore);
           if (edits.length || settingsWrites.length) {
             const parts = [];
             if (edits.length) parts.push(`${edits.length} edit${edits.length === 1 ? "" : "s"}`);
             if (settingsWrites.length) parts.push(`${settingsWrites.length} settings change${settingsWrites.length === 1 ? "" : "s"} (not undoable)`);
             const undoButton = undoSteps > 0 ? w.button(`Undo ${undoSteps === 1 ? "it" : `these ${undoSteps}`}`, { ghost: true, title: "Undo the edits this turn made, newest first", onClick: (e) => {
-              let n = 0;
+              let count = 0;
               for (let i = 0; i < undoSteps; i++) {
                 const label = api.document.history().undo;
                 if (!label || !label.startsWith("AI:")) break;
                 if (!api.document.undo()) break;
-                n++;
+                count++;
               }
               e.currentTarget.disabled = true;
-              status.textContent = `Undid ${n} edit${n === 1 ? "" : "s"}.`;
+              phaseDetail.textContent = `Undid ${count} edit${count === 1 ? "" : "s"}.`;
             } }) : null;
             addNote(`This turn: ${parts.join(", ")}.`, ...undoButton ? [undoButton] : []);
           }
         } catch (err) {
           const aborted = err instanceof AiError && err.code === "aborted";
-          status.textContent = aborted ? "Stopped." : describeError(err);
+          setPhase(aborted ? "stopped" : "failed", aborted ? "" : describeError(err));
           const last = state.messages[state.messages.length - 1];
           if (last?.role === "user") state.messages.pop();
           if (!aborted) chat.append(h("div", { className: "ai-msg is-assistant ai-bad" }, describeError(err)));
         } finally {
           running = null;
+          startedAt = 0;
           send.disabled = false;
           stop.hidden = true;
+          intent.show(null);
           input.focus();
         }
       };
-      const chipRow = h("div", { className: "ai-chips" }, ...QUICK_PROMPTS.map((q) => h("button", { type: "button", className: "ai-chip", title: q.text, onClick: () => {
-        input.value = q.text;
-        input.focus();
-      } }, q.label)));
       append(root, [
+        strip,
         chat,
         context,
         chipRow,
         input,
-        h("div", { className: "ai-btns" }, send, stop, more, attach, h("span", { style: "flex: 1" }), copyButton, clearButton),
-        status
+        h("div", { className: "ai-btns" }, send, stop, more, attach, h("span", { style: "flex: 1" }), copyButton, clearButton)
       ]);
       askLater = (text, sendNow) => {
         input.value = text;
@@ -3655,9 +4875,10 @@ function openAssistant(ctx, state) {
       } else input.focus();
       return () => {
         running?.abort();
-        offSel.dispose();
-        offClip.dispose();
-        offDoc.dispose();
+        for (const o of offs) o.dispose();
+        intent.handle.remove();
+        if (clockTimer !== null) window.clearInterval(clockTimer);
+        ctx.presence?.set({ text: state.spent ? `AI \xB7 ${formatUsd(state.spent)}` : "AI", busy: false, warn: false });
         askLater = null;
       };
     }
@@ -3752,7 +4973,7 @@ function openBriefing(ctx) {
         const msgs = lines.value.split("\n").map((s) => s.trim()).filter(Boolean);
         if (obj2.length === 0 && msgs.length === 0) return;
         const actions = api.names.actions(true);
-        const typeOf = (label, fallback) => actions.find((a) => a.label.toLowerCase() === label)?.value ?? fallback;
+        const typeOf = (label, fallback) => actions.find((a2) => a2.label.toLowerCase() === label)?.value ?? fallback;
         const objectivesType = typeOf("mission objectives", 4);
         const messageType = typeOf("text message", 3);
         const ms = Math.max(1, Number(seconds.value) || 8) * 1e3;
@@ -3760,15 +4981,15 @@ function openBriefing(ctx) {
           const t = api.triggers.newTrigger([0, 1, 2, 3, 4, 5, 6, 7]);
           t.actions = [];
           if (obj2.length) {
-            const a = api.triggers.newAction(objectivesType, true);
-            a.text = tx.strings.intern(obj2.join("\n"));
-            t.actions.push(a);
+            const a2 = api.triggers.newAction(objectivesType, true);
+            a2.text = tx.strings.intern(obj2.join("\n"));
+            t.actions.push(a2);
           }
           for (const m of msgs) {
-            const a = api.triggers.newAction(messageType, true);
-            a.text = tx.strings.intern(m);
-            a.time = ms;
-            t.actions.push(a);
+            const a2 = api.triggers.newAction(messageType, true);
+            a2.text = tx.strings.intern(m);
+            a2.time = ms;
+            t.actions.push(a2);
           }
           if (replace.input.checked) tx.briefing.set([t]);
           else tx.briefing.add(t);
@@ -3827,9 +5048,9 @@ function openExplain(ctx) {
           runner.idle("There are no triggers to explain.");
           return;
         }
-        const a = Math.max(1, Math.min(source.length, Number(from.value) || 1)) - 1;
-        const b = Math.max(a + 1, Math.min(source.length, Number(to.value) || source.length));
-        const slice = source.slice(a, b);
+        const a2 = Math.max(1, Math.min(source.length, Number(from.value) || 1)) - 1;
+        const b = Math.max(a2 + 1, Math.min(source.length, Number(to.value) || source.length));
+        const slice = source.slice(a2, b);
         text = "";
         out.replaceChildren(h("div", { className: "ai-hint" }, "Writing\u2026"));
         const r = await runRecipe(ctx, runner, "explain-triggers", {
@@ -4020,7 +5241,7 @@ function openGenerate(ctx) {
         state.tileset = v;
         syncTarget();
       } });
-      const playersSel = w.select([2, 3, 4, 5, 6, 7, 8].map((n) => ({ value: n, label: String(n) })), { value: state.players, onChange: (v) => {
+      const playersSel = w.select([2, 3, 4, 5, 6, 7, 8].map((n2) => ({ value: n2, label: String(n2) })), { value: state.players, onChange: (v) => {
         state.players = Number(v);
       } });
       const symSel = w.select(["auto", ...SYMMETRY_MODES].map((m) => ({ value: m, label: SYMMETRY_LABELS[m] })), { value: state.symmetry, onChange: (v) => {
@@ -4199,6 +5420,487 @@ Change this: ${state.refine.trim()}` : state.prompt,
   });
 }
 
+// dialogs/scenario.ts
+var SIZES2 = [64, 96, 128, 160, 192, 256];
+var TILESETS2 = [
+  { id: "badlands", label: "Badlands" },
+  { id: "platform", label: "Space Platform" },
+  { id: "install", label: "Installation" },
+  { id: "ashworld", label: "Ashworld" },
+  { id: "jungle", label: "Jungle" },
+  { id: "desert", label: "Desert" },
+  { id: "ice", label: "Ice" },
+  { id: "twilight", label: "Twilight" }
+];
+var EXAMPLES2 = {
+  "a madness map": "A four-player madness map: each player in a walled corner base, zerglings and marines spawning every few seconds and charging the centre, kills paid in minerals, last base standing wins.",
+  "an RPG": "An RPG about a marine lost on a Zerg world: a town with a shop and a healer, three regions of rising danger joined by narrow paths, a brood mother at the end. Two players, permadeath off.",
+  "a tower defense": "A two-lane tower defense for up to four players: waves walk from the north spawns down the lanes to the goal at the south; players build turrets beside the lanes; twenty waves, shared lives."
+};
+var REPAIR_ROUNDS = 2;
+function layoutPrompt(design) {
+  const lines = [design.layoutBrief.trim(), ""];
+  if (design.locations.length) {
+    lines.push("Locations to create, by name (the triggers refer to them \u2014 every one must be in the plan's `locations`):");
+    for (const l of design.locations) lines.push(`- ${l.name}: ${l.purpose}`);
+    lines.push("");
+  }
+  const humans = design.players.filter((p) => p.type === "human");
+  lines.push(`This is a scenario (UMS), genre ${design.genre}: follow the brief rather than the melee rules. ${humans.length} human player${humans.length === 1 ? "" : "s"} (${humans.map((p) => `player ${p.slot}`).join(", ")}), each needing a start location where the brief puts it; no mining bases unless the brief asks for them.`);
+  return lines.join("\n");
+}
+function paramsToText(params) {
+  return params.map((p) => `${p.key}=${p.value}`).join("; ");
+}
+function textToParams(text) {
+  return text.split(";").map((s) => s.trim()).filter(Boolean).map((s) => {
+    const at = s.indexOf("=");
+    return at < 0 ? { key: s, value: "" } : { key: s.slice(0, at).trim(), value: s.slice(at + 1).trim() };
+  });
+}
+function openScenario(ctx, presetPrompt) {
+  const { api } = ctx;
+  const w = api.ui.widgets;
+  const info = api.document.info();
+  const state = {
+    prompt: presetPrompt ?? "",
+    width: info?.width ?? 128,
+    height: info?.height ?? 128,
+    tileset: info?.tileset ?? "jungle",
+    players: 4,
+    target: info ? "open" : "new",
+    design: null,
+    refine: "",
+    built: false
+  };
+  api.ui.dialog({
+    title: "Make Scenario",
+    size: "lg",
+    tall: true,
+    mount(body, dialog) {
+      const root = styled(body);
+      const runner = new Runner(ctx);
+      const promptField = textarea({ value: state.prompt, placeholder: 'What kind of scenario? A genre and a sentence of story is enough: "a madness map", "an RPG about a lost marine", "a four-player tower defense with two lanes".', rows: 3 });
+      promptField.addEventListener("input", () => {
+        state.prompt = promptField.value;
+      });
+      const widthSel = w.select(SIZES2.map((s) => ({ value: s, label: String(s) })), { value: state.width, onChange: (v) => {
+        state.width = Number(v);
+        syncTarget();
+      } });
+      const heightSel = w.select(SIZES2.map((s) => ({ value: s, label: String(s) })), { value: state.height, onChange: (v) => {
+        state.height = Number(v);
+        syncTarget();
+      } });
+      const tilesetSel = w.select(TILESETS2.map((t) => ({ value: t.id, label: t.label })), { value: state.tileset, onChange: (v) => {
+        state.tileset = v;
+        syncTarget();
+      } });
+      const playersSel = w.select([1, 2, 3, 4, 5, 6, 7, 8].map((n2) => ({ value: n2, label: String(n2) })), { value: state.players, onChange: (v) => {
+        state.players = Number(v);
+      } });
+      const targetSel = w.select([{ value: "new", label: "A new map" }, { value: "open", label: "The open map" }], { value: state.target, onChange: (v) => {
+        state.target = v;
+      } });
+      const targetHint = h("div", { className: "ai-hint" });
+      const syncTarget = () => {
+        const cur = api.document.info();
+        const same = !!cur && cur.width === state.width && cur.height === state.height && cur.tileset === state.tileset;
+        targetSel.options[1].disabled = !same;
+        if (!same && state.target === "open") {
+          state.target = "new";
+          targetSel.value = "new";
+        }
+        targetHint.textContent = same ? "Into the open map: its terrain and objects are replaced by the plan, and the triggers are appended to what is there." : "A new blank map of this size and tileset is made first. An open map with unsaved changes asks before it goes.";
+      };
+      syncTarget();
+      const designButton = w.button("Design", { primary: true, onClick: () => void design(false) });
+      const scriptNote = h("div", { className: "ai-hint" }, hasScriptPlugin(api) ? "The Trigger Script plugin is on: systems the toolkit cannot build are written as scripts." : "The Trigger Script plugin is off: the design will use only the toolkit's systems (hyper triggers, spawns, kill-to-cash, waves, lives, shops, \u2026). Turn it on under Plugins \u25B8 Manage Plugins\u2026 for custom mechanics.");
+      const designBox = h("div", { hidden: true });
+      const refineField = textarea({ placeholder: 'What should change in the design? ("make it two players", "add a boss", "less income")', rows: 2 });
+      refineField.addEventListener("input", () => {
+        state.refine = refineField.value;
+      });
+      const redesignButton = w.button("Design again", { onClick: () => void design(true) });
+      const buildButton = w.button("Build", { primary: true, onClick: () => void build() });
+      const showDesign = (d) => {
+        designBox.replaceChildren();
+        const nameField = w.text({ value: d.name, onChange: (v) => {
+          d.name = v;
+        } });
+        const descField = textarea({ value: d.description, rows: 2 });
+        descField.addEventListener("input", () => {
+          d.description = descField.value;
+        });
+        const briefField = textarea({ value: d.layoutBrief, rows: 6 });
+        briefField.addEventListener("input", () => {
+          d.layoutBrief = briefField.value;
+        });
+        const objectivesField = textarea({ value: d.objectives, rows: 3 });
+        objectivesField.addEventListener("input", () => {
+          d.objectives = objectivesField.value;
+        });
+        const briefingField = textarea({ value: d.briefing.join("\n"), rows: 4 });
+        briefingField.addEventListener("input", () => {
+          d.briefing = briefingField.value.split("\n").map((s) => s.trim()).filter(Boolean);
+        });
+        const players2 = noteList(d.players.map((p) => `Player ${p.slot}: ${p.type}, ${p.race}, force ${p.force} \u2014 ${p.role}`));
+        const forces = noteList(d.forces.map((f) => `Force ${f.index} "${f.name}"${f.allied ? ", allied" : ""}${f.alliedVictory ? ", allied victory" : ""}${f.sharedVision ? ", shared vision" : ""}`));
+        const locations = noteList(d.locations.map((l) => `${l.name} \u2014 ${l.purpose}`));
+        const systemRows = h("div", { className: "ai-list" });
+        const kinds = new Set(systemKinds().map((k) => k.kind));
+        d.systems.forEach((s, i) => {
+          const params = w.text({ value: paramsToText(s.params), placeholder: "key=value; key=value", onChange: (v) => {
+            s.params = textToParams(v);
+          } });
+          const remove = w.button("Remove", { ghost: true, onClick: () => {
+            d.systems.splice(i, 1);
+            showDesign(d);
+          } });
+          systemRows.append(h(
+            "div",
+            { className: "ai-item" },
+            h("span", { className: kinds.has(s.kind) ? "ai-ok" : s.kind === "custom" ? "ai-gold" : "ai-bad", style: "width: 96px; flex: none;", title: kinds.has(s.kind) ? "built by the toolkit" : s.kind === "custom" ? "written as a trigger script" : "not a kind the toolkit has" }, s.kind),
+            h("div", { className: "ai-grow" }, h("div", null, s.name), h("div", { className: "ai-dim" }, s.description), s.kind === "custom" ? null : params),
+            remove
+          ));
+        });
+        const parts = [
+          w.group(
+            `${d.genre}: ${d.name}`,
+            w.form([{ label: "Name", field: nameField }, { label: "Description", field: descField }]),
+            h("div", { className: "ai-hint" }, d.premise)
+          ),
+          w.group("Players and forces", players2, forces),
+          w.group(`Systems (${d.systems.length})`, systemRows, h("div", { className: "ai-hint" }, "Green: the toolkit builds it from the parameters. Gold: written as a trigger script from the description. Edit the parameters here; a location or unit by name, numbers as digits.")),
+          w.group(`Layout brief and ${d.locations.length} locations`, briefField, h("details", null, h("summary", null, "Locations the brief must place"), h("div", { className: "ai-body" }, locations))),
+          w.group("Objectives and briefing", objectivesField, briefingField),
+          d.notes.length ? h("details", null, h("summary", null, "Designer's notes"), h("div", { className: "ai-body" }, noteList(d.notes))) : null,
+          h("div", { className: "ai-btns" }, buildButton, refineField, redesignButton)
+        ];
+        for (const part of parts) if (part) designBox.append(part);
+        designBox.hidden = false;
+      };
+      const stepsBox = h("div", { className: "ai-steps", hidden: true });
+      const afterBox = h("div", { className: "ai-btns", hidden: true });
+      const findingsBox = h("div", null);
+      const addStep = (label) => {
+        const mark = h("span", { className: "ai-step-mark" }, "\u25CB");
+        const detail = h("span", { className: "ai-dim" }, "");
+        const row = h("div", { className: "ai-step is-pending" }, mark, h("span", { className: "ai-grow" }, label), detail);
+        stepsBox.append(row);
+        return {
+          set(s, text = "") {
+            row.className = `ai-step is-${s}`;
+            mark.className = s === "running" ? "ai-step-mark ai-spin" : "ai-step-mark";
+            mark.textContent = s === "running" ? "" : s === "done" ? "\u2713" : s === "failed" ? "\u2717" : s === "skipped" ? "\u2013" : "\u25CB";
+            detail.textContent = text;
+            detail.title = text;
+          }
+        };
+      };
+      const ensureMap = async () => {
+        if (state.target === "open" && api.document.isOpen()) return true;
+        const ok = await api.document.create({ width: state.width, height: state.height, tileset: state.tileset, name: "Untitled Scenario" });
+        if (!ok) {
+          runner.idle("Kept the open map.");
+          return false;
+        }
+        state.target = "open";
+        targetSel.value = "open";
+        syncTarget();
+        return true;
+      };
+      const design = async (refine) => {
+        if (!state.prompt.trim()) {
+          promptField.focus();
+          runner.idle("Say what kind of scenario you want first.");
+          return;
+        }
+        if (!await ensureMap()) return;
+        await api.tileset.load();
+        const prompt = refine && state.refine.trim() && state.design ? `${state.prompt}
+
+The previous design was:
+${JSON.stringify(state.design)}
+
+Change this: ${state.refine.trim()}` : state.prompt;
+        const input = {
+          prompt,
+          width: api.document.info().width,
+          height: api.document.info().height,
+          tileset: api.document.info().tileset,
+          players: state.players,
+          terrains: terrainVocab(api),
+          unitNames: unitNames(api),
+          systemKinds: systemKinds(),
+          scriptPlugin: hasScriptPlugin(api),
+          guide: guideFor(state.prompt)?.text
+        };
+        designButton.disabled = true;
+        redesignButton.disabled = true;
+        try {
+          const r = await runRecipe(ctx, runner, "ums-design", input);
+          if (!r) return;
+          state.design = r.output;
+          state.built = false;
+          stepsBox.hidden = true;
+          afterBox.hidden = true;
+          findingsBox.replaceChildren();
+          showDesign(r.output);
+          designBox.scrollIntoView({ block: "nearest" });
+        } finally {
+          designButton.disabled = false;
+          redesignButton.disabled = false;
+        }
+      };
+      const writeCustom = async (system, d) => {
+        const bridge = scriptBridge(api);
+        if (!bridge) throw new Error("the Trigger Script plugin is off");
+        const existing = bridge.state();
+        const prompt = `System "${system.name}" of the scenario "${d.name}" (${d.genre}). ${system.description}
+
+The scenario's premise: ${d.premise}
+Locations on the map: ${d.locations.map((l) => `${l.name} (${l.purpose})`).join("; ")}.
+Hyper triggers ${d.systems.some((s) => s.kind === "hyper") ? "are" : "are not"} on the map. Write only this system; the other systems already exist as ordinary triggers.`;
+        const hand = api.triggers.list().filter((_, i) => !(existing?.block && i >= existing.block.start && i < existing.block.start + existing.block.count));
+        const input = { prompt, declarations: bridge.declarations(), script: existing?.source ?? void 0, existingTriggers: hand.length > 0 ? api.triggers.text.print(hand).slice(0, 3e4) : void 0 };
+        let r = await runRecipe(ctx, runner, "triggers", input);
+        if (!r) throw new Error("the model did not answer");
+        let script = r.output.script;
+        let compiled = await bridge.compile(script);
+        for (let round = 0; !compiled.ok && round < REPAIR_ROUNDS; round++) {
+          r = await runRecipe(ctx, runner, "triggers", { ...input, repair: { script, diagnostics: compiled.diagnostics.map((x) => ({ line: x.line, column: x.column, message: x.message })) } });
+          if (!r) throw new Error("the model did not answer the repair");
+          script = r.output.script;
+          compiled = await bridge.compile(script);
+        }
+        if (!compiled.ok) throw new Error(`the script has ${compiled.diagnostics.length} error${compiled.diagnostics.length === 1 ? "" : "s"} after ${REPAIR_ROUNDS} repairs; open the Script Editor to fix it`);
+        const built = await bridge.build(script, {});
+        if (!built.block) throw new Error("the build failed");
+        return `${built.block.count} triggers from a script: ${r.output.summary}`;
+      };
+      const build = async () => {
+        const d = state.design;
+        if (!d || !await ensureMap()) return;
+        await api.tileset.load();
+        buildButton.disabled = true;
+        redesignButton.disabled = true;
+        stepsBox.replaceChildren();
+        stepsBox.hidden = false;
+        afterBox.hidden = true;
+        findingsBox.replaceChildren();
+        const findings = [];
+        const cur = api.document.info();
+        const humans = d.players.filter((p) => p.type === "human").map((p) => p.slot);
+        const hyper = d.systems.some((s) => s.kind === "hyper");
+        const locationNames2 = d.locations.map((l) => l.name);
+        const kinds = new Set(systemKinds().map((k) => k.kind));
+        const steps = [];
+        steps.push({
+          label: "Terrain and locations",
+          run: async () => {
+            const input = {
+              prompt: layoutPrompt(d),
+              width: cur.width,
+              height: cur.height,
+              tileset: cur.tileset,
+              terrains: terrainVocab(api),
+              doodadCategories: doodadCategoryNames(api),
+              unitNames: unitNames(api),
+              players: Math.max(1, humans.length),
+              symmetry: ["madness", "arena", "diplomacy"].includes(d.genre) ? "auto" : "none",
+              cellSize: cellSizeFor(cur.width, cur.height)
+            };
+            const r = await runRecipe(ctx, runner, "map-plan", input);
+            if (!r) throw new Error("no plan came back");
+            const rendered = renderPlan(api, r.output, { originX: 0, originY: 0, label: `AI: ${d.name} terrain`, clearArea: true });
+            if (!rendered) throw new Error("the plan could not be rendered");
+            findings.push(...rendered.findings.filter((f) => !f.startsWith("Check Map:")));
+            const have = new Set(api.document.scenario().locations.map((_, i) => api.names.location(i).toLowerCase()));
+            const missing = locationNames2.filter((n2) => !have.has(n2.toLowerCase()));
+            if (missing.length) {
+              api.document.edit("AI: missing locations", (tx) => {
+                missing.forEach((name, i) => {
+                  const cx = Math.floor(cur.width / 2) + i % 4 * 5 - 8, cy = Math.floor(cur.height / 2) + Math.floor(i / 4) * 5 - 8;
+                  tx.addLocation({ left: cx * TILE2, top: cy * TILE2, right: (cx + 4) * TILE2, bottom: (cy + 4) * TILE2 }, name);
+                });
+              });
+              findings.push(`${missing.length} location${missing.length === 1 ? "" : "s"} the plan did not place (${missing.join(", ")}) were put near the centre as 4\xD74 boxes; move them where they belong`);
+            }
+            return summarizeRender(rendered);
+          }
+        });
+        steps.push({
+          label: "Players and forces",
+          run: async () => {
+            const typeOf = (label) => api.names.playerTypes().find((t) => t.label.toLowerCase() === label)?.value;
+            const raceOf = (label) => api.names.races().find((r) => r.label.toLowerCase() === label)?.value;
+            const races = { terran: "terran", zerg: "zerg", protoss: "protoss", random: "random", userSelect: "user selectable" };
+            let changed = 0;
+            api.document.update("AI: players and forces", (tx) => {
+              for (let slot = 0; slot < 8; slot++) {
+                const p = d.players.find((x) => x.slot === slot + 1);
+                if (!p) {
+                  if (tx.players.set(slot, { type: typeOf("inactive") ?? 0 })) changed++;
+                  continue;
+                }
+                if (tx.players.set(slot, { type: typeOf(p.type) ?? 6, race: raceOf(races[p.race] ?? p.race) ?? 5, force: Math.max(0, Math.min(3, p.force - 1)) })) changed++;
+              }
+              for (const f of d.forces) {
+                if (tx.forces.set(f.index - 1, { name: f.name, allied: f.allied, alliedVictory: f.alliedVictory, sharedVision: f.sharedVision })) changed++;
+              }
+            });
+            const starts = new Set(api.query.startLocations().map((s) => s.owner + 1));
+            const missing = humans.filter((p) => !starts.has(p));
+            if (missing.length) {
+              const scn = api.document.scenario();
+              api.document.edit("AI: start locations", (tx) => {
+                missing.forEach((p, i) => {
+                  const named = scn.locations.findIndex((l, li) => new RegExp(`\\b(start|spawn|base|home)\\s*${p}\\b`, "i").test(api.names.location(li)) && l.left !== l.right);
+                  const loc = named >= 0 ? scn.locations[named] : null;
+                  const c2 = loc ? centreOf({ x: Math.floor(Math.min(loc.left, loc.right) / TILE2), y: Math.floor(Math.min(loc.top, loc.bottom) / TILE2), w: Math.max(1, Math.round(Math.abs(loc.right - loc.left) / TILE2)), h: Math.max(1, Math.round(Math.abs(loc.bottom - loc.top) / TILE2)) }) : { x: (Math.floor(cur.width / 2) + (i - missing.length / 2) * 6) * TILE2, y: Math.floor(cur.height / 2) * TILE2 };
+                  tx.placeUnit(START_LOCATION, p - 1, c2.x, c2.y);
+                });
+              });
+              findings.push(`start locations for player${missing.length === 1 ? "" : "s"} ${missing.join(", ")} were placed by the editor; check where`);
+            }
+            return `${changed} setting${changed === 1 ? "" : "s"} written, ${humans.length} human player${humans.length === 1 ? "" : "s"}`;
+          }
+        });
+        for (const s of d.systems) {
+          steps.push({
+            label: `${s.kind === "custom" ? "Script" : "System"}: ${s.name}`,
+            run: async () => {
+              if (s.kind === "custom") return writeCustom(s, d);
+              if (!kinds.has(s.kind)) throw new Error(`the toolkit has no kind "${s.kind}"`);
+              try {
+                const r = addSystem(api, s.kind, paramsOf(s.params), toolkitContext(api, { hyper, extraLocations: locationNames2 }), `AI: ${s.name}`);
+                findings.push(...r.notes.map((n2) => `${s.name}: ${n2}`));
+                return `${r.count} trigger${r.count === 1 ? "" : "s"}`;
+              } catch (err) {
+                if (err instanceof ToolkitError) throw new Error(err.problems.join("; "));
+                throw err;
+              }
+            }
+          });
+        }
+        if (!d.systems.some((s) => s.kind === "objectives") && d.objectives.trim()) {
+          steps.push({ label: "Objectives", run: async () => {
+            const r = addSystem(api, "objectives", { text: d.objectives.replace(/\n/g, "\\n") }, toolkitContext(api, { hyper, extraLocations: locationNames2 }), "AI: objectives");
+            return `${r.count} trigger`;
+          } });
+        }
+        if (d.briefing.length) {
+          steps.push({
+            label: "Mission briefing",
+            run: async () => {
+              const actions = api.names.actions(true);
+              const typeOf = (label, fallback) => actions.find((a2) => a2.label.toLowerCase() === label)?.value ?? fallback;
+              api.document.update("AI: mission briefing", (tx) => {
+                const t = api.triggers.newTrigger(humans.map((p) => p - 1));
+                t.actions = [];
+                if (d.objectives.trim()) {
+                  const a2 = api.triggers.newAction(typeOf("mission objectives", 4), true);
+                  a2.text = tx.strings.intern(d.objectives);
+                  t.actions.push(a2);
+                }
+                for (const line of d.briefing) {
+                  const a2 = api.triggers.newAction(typeOf("text message", 3), true);
+                  a2.text = tx.strings.intern(line);
+                  a2.time = 8e3;
+                  t.actions.push(a2);
+                }
+                tx.briefing.set([t]);
+              });
+              return `${d.briefing.length} line${d.briefing.length === 1 ? "" : "s"}`;
+            }
+          });
+        }
+        steps.push({ label: "Name and description", run: async () => {
+          api.document.update("AI: name and description", (tx) => {
+            tx.properties({ name: d.name, description: d.description });
+          });
+          return d.name;
+        } });
+        steps.push({
+          label: "Check Map",
+          run: async () => {
+            const issues = api.query.validate().filter((i) => i.level !== "info");
+            for (const i of issues) findings.push(`Check Map: ${i.text}`);
+            return issues.length ? `${issues.length} thing${issues.length === 1 ? "" : "s"} to look at` : "nothing wrong";
+          }
+        });
+        const rows = steps.map((s) => addStep(s.label));
+        let failed = 0;
+        for (let i = 0; i < steps.length; i++) {
+          rows[i].set("running");
+          try {
+            const text = await steps[i].run();
+            rows[i].set("done", text);
+          } catch (err) {
+            failed++;
+            rows[i].set("failed", err.message);
+            findings.push(`${steps[i].label}: ${err.message}`);
+            if (i === 0) {
+              for (let j = 1; j < steps.length; j++) rows[j].set("skipped", "not run");
+              break;
+            }
+          }
+        }
+        state.built = true;
+        buildButton.disabled = false;
+        redesignButton.disabled = false;
+        if (findings.length) findingsBox.replaceChildren(h("details", { open: failed > 0 }, h("summary", null, `${findings.length} thing${findings.length === 1 ? "" : "s"} to know`), h("div", { className: "ai-body" }, noteList(findings))));
+        afterBox.replaceChildren(
+          w.button("Review it\u2026", { onClick: () => {
+            dialog.close();
+            openReview(ctx);
+          } }),
+          w.button("Open the assistant", { onClick: () => {
+            dialog.close();
+            api.commands.run("ai.ask", `I just built the scenario "${d.name}" (${d.genre}) from a design: ${d.systems.map((s) => s.name).join(", ")}. Look it over and tell me what to fix first.`);
+          } }),
+          h("span", { className: "ai-hint" }, failed ? `${failed} step${failed === 1 ? "" : "s"} failed; the rest went in. Every edit is an undo step, the settings and triggers are not.` : "Built. Every edit is an undo step; the settings and triggers are transactions outside undo, as in StarEdit.")
+        );
+        afterBox.hidden = false;
+        runner.idle(failed ? `Built with ${failed} failed step${failed === 1 ? "" : "s"}.` : `Built ${d.name}.`);
+        api.ui.status(`AI: built ${d.name}`);
+      };
+      root.append(
+        w.group(
+          "What to make",
+          promptField,
+          chips(Object.keys(EXAMPLES2), (label) => {
+            promptField.value = EXAMPLES2[label];
+            state.prompt = promptField.value;
+          }),
+          w.form([
+            { label: "Size", field: h("div", { className: "ai-btns" }, widthSel, "\xD7", heightSel) },
+            { label: "Tileset", field: tilesetSel },
+            { label: "Players", field: playersSel },
+            { label: "Into", field: targetSel }
+          ]),
+          targetHint,
+          scriptNote,
+          h("div", { className: "ai-btns" }, designButton)
+        ),
+        runner.el,
+        designBox,
+        stepsBox,
+        findingsBox,
+        afterBox,
+        ledgerLine(ctx)
+      );
+      promptField.focus();
+      return () => {
+        runner.dispose();
+      };
+    },
+    buttons: [{ label: "Close" }]
+  });
+}
+
 // dialogs/strings.ts
 var PRESETS2 = [
   { label: "Translate to\u2026", text: "Translate every string to " },
@@ -4207,7 +5909,7 @@ var PRESETS2 = [
   { label: "In-universe", text: "Rewrite the messages in the voice of a StarCraft mission briefing: terse, military, in-universe. Keep names and numbers." }
 ];
 function escapeControls(s) {
-  return s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, (c) => `<${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}>`);
+  return s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, (c2) => `<${c2.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}>`);
 }
 function unescapeControls(s) {
   return s.replace(/<([0-9A-Fa-f]{2})>/g, (_, hex2) => String.fromCharCode(parseInt(hex2, 16)));
@@ -4260,7 +5962,7 @@ function openStrings(ctx) {
           if (want === "names" && !isName) continue;
           out.push({ index, text: escapeControls(text), usage: kinds });
         }
-        return out.sort((a, b) => a.index - b.index);
+        return out.sort((a2, b) => a2.index - b.index);
       };
       const show = () => {
         table.replaceChildren(h("tr", null, h("th", null, ""), h("th", null, "#"), h("th", null, "Before"), h("th", null, "After"), h("th", null, "Used by")));
@@ -4290,8 +5992,8 @@ function openStrings(ctx) {
         const after = new Map(r.output.strings.map((s) => [s.index, s.text]));
         proposed = strings.map((s) => ({ index: s.index, before: s.text, after: after.get(s.index) ?? s.text, usage: s.usage }));
         show();
-        const n = proposed.filter((p) => p.after !== p.before).length;
-        runner.idle(`${n} of ${strings.length} strings would change. Untick any to keep, then Apply.`);
+        const n2 = proposed.filter((p) => p.after !== p.before).length;
+        runner.idle(`${n2} of ${strings.length} strings would change. Untick any to keep, then Apply.`);
       };
       root.append(
         w.group(
@@ -4316,7 +6018,7 @@ function openStrings(ctx) {
 }
 
 // dialogs/triggers.ts
-var REPAIR_ROUNDS = 2;
+var REPAIR_ROUNDS2 = 2;
 function openTriggers(ctx) {
   const { api } = ctx;
   const bridge = scriptBridge(api);
@@ -4394,8 +6096,8 @@ function openTriggers(ctx) {
         scriptField.value = script;
         summary.textContent = state.summary;
         let compiled = await check();
-        for (let round = 0; compiled && !compiled.ok && round < REPAIR_ROUNDS; round++) {
-          runner.idle(`The script has ${compiled.diagnostics.length} error${compiled.diagnostics.length === 1 ? "" : "s"}; asking for a repair (${round + 1} of ${REPAIR_ROUNDS})\u2026`);
+        for (let round = 0; compiled && !compiled.ok && round < REPAIR_ROUNDS2; round++) {
+          runner.idle(`The script has ${compiled.diagnostics.length} error${compiled.diagnostics.length === 1 ? "" : "s"}; asking for a repair (${round + 1} of ${REPAIR_ROUNDS2})\u2026`);
           r = await runRecipe(ctx, runner, "triggers", { ...input, repair: { script, diagnostics: compiled.diagnostics.map((d) => ({ line: d.line, column: d.column, message: d.message })) } });
           if (!r) return;
           script = r.output.script;
@@ -4438,13 +6140,76 @@ function openTriggers(ctx) {
   });
 }
 
+// slots.ts
+function installDialogSlots(ctx, actions) {
+  const { api } = ctx;
+  const w = api.ui.widgets;
+  api.ui.dialogSlot("mapProperties", {
+    mount(body, dlg) {
+      const status = api.ui.el("span", { className: "faint" }, "");
+      const button = w.button("Suggest a name", { ghost: true, title: "Ask the AI for a name and description from what is on the map; fills the fields, OK writes them", onClick: async () => {
+        button.disabled = true;
+        status.textContent = "Asking\u2026";
+        try {
+          const r = await ctx.client.run("describe", { facts: mapFacts(api), prompt: dlg.fields.description?.get()?.trim() ? `The current description is: ${dlg.fields.description.get()}` : void 0 }, {}, recipeOptions(ctx.settings()));
+          dlg.fields.name?.set(r.output.name);
+          dlg.fields.description?.set(r.output.description);
+          status.textContent = r.output.alternatives.length ? `Or: ${r.output.alternatives.map((a2) => a2.name).join(" \xB7 ")}` : "";
+        } catch (err) {
+          status.textContent = describeError(err);
+        } finally {
+          button.disabled = false;
+        }
+      } });
+      body.append(button, status);
+    }
+  });
+  const triggerSlot = (host, body) => {
+    const briefing = host.payload.briefing === true || host.dialog === "missionBriefing";
+    body.append(
+      w.button("Explain", { ghost: true, title: "Walk through what these triggers do in play", onClick: () => {
+        host.close();
+        actions.explain();
+      } }),
+      w.button(briefing ? "Write briefing\u2026" : "Write triggers\u2026", { ghost: true, title: briefing ? "Write objectives and narration with the AI" : "Write a trigger script from a description", onClick: () => {
+        host.close();
+        if (briefing) actions.briefing();
+        else actions.triggers();
+      } }),
+      w.button("Ask", { ghost: true, title: "Ask the assistant about the triggers", onClick: () => {
+        host.close();
+        actions.assistant(briefing ? "About the mission briefing: " : "About the triggers: ");
+      } })
+    );
+  };
+  api.ui.dialogSlot("triggerEditor", { mount: (body, host) => triggerSlot(host, body) });
+  api.ui.dialogSlot("textTriggerEditor", { mount: (body, host) => triggerSlot(host, body) });
+  api.ui.dialogSlot("missionBriefing", { mount: (body, host) => triggerSlot(host, body) });
+  api.ui.dialogSlot("stringEditor", {
+    mount(body, host) {
+      body.append(w.button("Rewrite with AI\u2026", { ghost: true, title: "Translate, fix or retone the strings", onClick: () => {
+        host.close();
+        actions.strings();
+      } }));
+    }
+  });
+  api.ui.dialogSlot("playerSettings", {
+    mount(body, host) {
+      body.append(w.button("Set up with AI\u2026", { ghost: true, title: "Tell the assistant what the players should be", onClick: () => {
+        host.close();
+        actions.assistant("Set up the players and forces for: ");
+      } }));
+    }
+  });
+}
+
 // settings.ts
 var DEFAULT_SERVER_URL = "https://api.scmjs.dev";
-var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false };
+var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: true };
 var KEY = "settings";
 function newDeviceId() {
-  const c = globalThis.crypto;
-  if (c?.randomUUID) return c.randomUUID().replace(/-/g, "");
+  const c2 = globalThis.crypto;
+  if (c2?.randomUUID) return c2.randomUUID().replace(/-/g, "");
   let s = "";
   for (let i = 0; i < 32; i++) s += Math.floor(Math.random() * 16).toString(16);
   return s;
@@ -4516,6 +6281,9 @@ function openSettings(ctx, store) {
       } });
       const thinkingBox = w.checkbox("Show the model's reasoning summary while it works", { value: s.showThinking, onChange: (v) => {
         s.showThinking = v;
+      } });
+      const dockBox = w.checkbox("Dock the assistant beside the map (off: a floating panel)", { value: s.dockAssistant, onChange: (v) => {
+        s.dockAssistant = v;
       } });
       const roundsField = w.number({ value: s.maxRounds, min: 1, max: 100, step: 1, onChange: (v) => {
         s.maxRounds = Math.max(1, Math.min(100, Math.round(v || 24)));
@@ -4651,13 +6419,14 @@ function openSettings(ctx, store) {
             { label: "Effort", field: effortSelect }
           ]),
           thinkingBox,
-          h("div", { className: "ai-hint" }, "Effort trades thoroughness for time and cost. The features that lay out maps and write triggers default to high; the rest to low or medium.")
+          h("div", { className: "ai-hint" }, "Effort trades thoroughness for time and cost. The features that lay out maps and write triggers default to high; the rest to low or medium. Changing the model, the effort or the reasoning tick in the middle of an assistant conversation makes the server re-read the whole conversation once; the next message is a little dearer.")
         ),
         w.group(
           "Assistant",
           w.form([{ label: "Rounds per message", field: roundsField }]),
           attachBox,
-          h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time.")
+          dockBox,
+          h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time. The dock setting applies the next time the assistant opens.")
         )
       );
       void connect();
@@ -4680,7 +6449,7 @@ function activate(api) {
     return { serverUrl: s.serverUrl, access: s.access, session: s.session, token: s.token, ownKey: s.ownKey };
   });
   const account = new AccountManager(store, client);
-  const ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store) };
+  const ctx = { api, settings: () => store.get(), client, ledger: client.ledger, account, openSettings: () => openSettings(ctx, store), presence: null };
   const assistant = { messages: [] };
   let assistantPanel = null;
   const open = () => api.document.isOpen();
@@ -4688,20 +6457,24 @@ function activate(api) {
     if (!assistantPanel?.isOpen()) assistantPanel = openAssistant(ctx, assistant);
     return assistantPanel;
   };
-  api.commands.register({ id: "generate", title: "AI: Generate Map", run: () => openGenerate(ctx) });
-  api.commands.register({ id: "assistant", title: "AI: Assistant", run: () => {
+  const toggleAssistant = () => {
     if (assistantPanel?.isOpen()) {
       assistantPanel.close();
       assistantPanel = null;
       return;
     }
     assistantPanel = openAssistant(ctx, assistant);
-  } });
+  };
+  ctx.presence = api.ui.statusItem({ text: "AI", title: "AI Assistant (Ctrl+Shift+A)", onClick: toggleAssistant });
+  api.commands.register({ id: "generate", title: "AI: Generate Map", run: () => openGenerate(ctx) });
+  api.commands.register({ id: "scenario", title: "AI: Make Scenario", run: (prompt) => openScenario(ctx, typeof prompt === "string" ? prompt : void 0) });
+  api.commands.register({ id: "assistant", title: "AI: Assistant", run: toggleAssistant });
   api.commands.register({ id: "ask", title: "AI: Ask about this", run: (text) => {
     showAssistant().ask(typeof text === "string" ? text : "", false);
   } });
   api.commands.register({ id: "settings", title: "AI: Settings", run: () => ctx.openSettings() });
   const menu = "Tools/AI";
+  api.menu.add(menu, { label: "Make Scenario\u2026", icon: "plugin", command: "scenario" });
   api.menu.add(menu, { label: "Generate Map\u2026", icon: "plugin", command: "generate" });
   api.menu.add(menu, { label: "Redo Area\u2026", icon: "plugin", enabled: open, run: () => void openRegion(ctx) });
   api.menu.add(menu, { label: "Write Triggers\u2026", icon: "plugin", enabled: open, run: () => openTriggers(ctx) });
@@ -4714,20 +6487,22 @@ function activate(api) {
   api.menu.add(menu, { label: "Settings\u2026", icon: "plugin", separator: true, command: "settings" });
   api.contextMenu.add("viewport", {
     label: "Redo this area with AI\u2026",
-    visible: (c) => c.markedArea !== null,
-    run: (c) => void openRegion(ctx, c.markedArea)
+    visible: (c2) => c2.markedArea !== null,
+    run: (c2) => void openRegion(ctx, c2.markedArea)
   });
   api.contextMenu.add("viewport", {
-    label: (c) => c.markedArea ? "Ask AI about this area\u2026" : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "Ask AI about the selection\u2026" : "Ask AI about this spot\u2026",
+    label: (c2) => c2.markedArea ? "Ask AI about this area\u2026" : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "Ask AI about the selection\u2026" : "Ask AI about this spot\u2026",
     enabled: open,
-    run: (c) => {
-      const where = c.markedArea ? `the marked area, tiles ${Math.min(c.markedArea.x0, c.markedArea.x1)},${Math.min(c.markedArea.y0, c.markedArea.y1)} to ${Math.max(c.markedArea.x0, c.markedArea.x1)},${Math.max(c.markedArea.y0, c.markedArea.y1)}` : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "what I have selected" : c.tile ? `the spot at tile ${c.tile.x},${c.tile.y}` : "here";
+    run: (c2) => {
+      const where = c2.markedArea ? `the marked area, tiles ${Math.min(c2.markedArea.x0, c2.markedArea.x1)},${Math.min(c2.markedArea.y0, c2.markedArea.y1)} to ${Math.max(c2.markedArea.x0, c2.markedArea.x1)},${Math.max(c2.markedArea.y0, c2.markedArea.y1)}` : api.selection.units().length || api.selection.locations().length || api.selection.sprites().length || api.selection.doodads().length ? "what I have selected" : c2.tile ? `the spot at tile ${c2.tile.x},${c2.tile.y}` : "here";
       showAssistant().ask(`About ${where}: `, false);
     }
   });
   api.hotkeys.add("Ctrl+Shift+A", { command: "assistant" });
+  installDialogSlots(ctx, { assistant: (text) => showAssistant().ask(text, false), explain: () => openExplain(ctx), triggers: () => openTriggers(ctx), strings: () => openStrings(ctx), briefing: () => openBriefing(ctx) });
   return () => {
     assistantPanel?.close();
+    ctx.presence?.remove();
   };
 }
 export {

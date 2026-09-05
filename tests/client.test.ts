@@ -91,6 +91,20 @@ describe("AiClient", () => {
     expect(JSON.parse(seen[0].init.body as string)).toMatchObject({ protocol: 1, input: { text: "x" } });
   });
 
+  it("reports the assistant's tool-call starts as they stream", async () => {
+    const client = new AiClient(creds, async () => sseResponse([
+      { event: "start", id: "1", recipe: "agent", model: "m" },
+      { event: "delta", text: "Looking." },
+      { event: "tool_use", id: "t1", name: "list_units" },
+      { event: "result", output: { content: [{ type: "text", text: "Looking." }, { type: "tool_use", id: "t1", name: "list_units", input: {} }], stopReason: "tool_use" }, usage },
+      { event: "done" },
+    ]));
+    const started: string[] = [];
+    const r = await client.run("agent", { messages: [], tools: [], facts: {} as never }, { onToolUse: (id, name) => started.push(`${id}:${name}`) });
+    expect(started).toEqual(["t1:list_units"]);
+    expect(r.output.stopReason).toBe("tool_use");
+  });
+
   it("accepts a JSON answer from a server that does not stream", async () => {
     const client = new AiClient(creds, async () => new Response(JSON.stringify({ id: "1", recipe: "describe", output: { name: "N", description: "D", alternatives: [] }, usage }), { status: 200, headers: { "content-type": "application/json" } }));
     const r = await client.run("describe", { facts: {} as never });

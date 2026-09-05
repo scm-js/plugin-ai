@@ -45,6 +45,21 @@ All of them are under Tools ▸ AI. Every change to the map is one undo step wit
 (properties, strings, triggers, players, unit settings …), which say so and are not in
 the undo model, as in StarEdit.
 
+**Make Scenario…** is the whole thing from a sentence: "a madness map", "an RPG about a
+marine lost on a Zerg world", "a two-lane tower defense". The model writes a *design
+document* first — the genre and premise, the players and forces, every trigger system the
+map runs on, the layout brief, the objectives and the briefing — with the genre's guide
+and the toolkit's catalogue in front of it; the dialog shows the document and lets you edit
+it (rename, drop a system, change a parameter, rewrite the brief). Build then goes step by
+step, each step a row that passes or fails on its own: the map, the terrain and the named
+locations (through Generate Map's planner), players and forces, every system, the
+objectives and briefing, the name, Check Map. Systems the *toolkit* knows — hyper triggers,
+spawn cycles, kill-to-cash, income, waves, lives, shops, heal spots, respawn, teleports,
+kill zones, leaderboards, countdowns, last standing, alliances, auto-attack, rescue by
+touch — are built by code from their parameters, instantly and the same way every time;
+anything else is written as a trigger script through Write Triggers' compile loop when the
+Trigger Script plugin is on. Afterwards, Review it or hand it to the assistant.
+
 **Generate Map…** describes a map and gets a plan back: a coarse grid of terrain types,
 the bases with their mineral lines, ramps, decoration, a name and a description. The
 dialog shows the plan as a coloured grid with the designer's notes before anything is
@@ -90,8 +105,14 @@ the strings in use, or only the trigger text, the briefing, or the names, and sh
 before-and-after table with a tick per row. Apply writes the ticked rows back in place,
 never renumbering, so triggers keep pointing at the same strings.
 
-**Assistant** (Ctrl+Shift+A) is a panel beside the map. Say what you want to know or
-change; the model reads the map through tools and changes it through others. It can
+**Assistant** (Ctrl+Shift+A) is a panel docked beside the map (or floating, by Settings).
+Say what you want to know or change; the model reads the map through tools and changes
+it through others. While it works a strip at the top says what is happening — waiting,
+thinking, writing, working on the map — with the seconds and the cost; its words stream in
+as they arrive; a tool call appears the moment the model commits to it and fills in when it
+runs; the map outlines what the call is about to touch in teal and flashes what it changed
+in gold; the status bar shows the same state, so the panel can be closed while it works;
+Escape stops. The chips above the input follow the layer and the selection. It can
 read everything: the map's facts and statistics, units (with every record field), doodads,
 sprites, locations, strings, switches, sounds, the triggers as text, the trigger script and
 its declarations, the settings of any unit type, upgrade or technology, the fog, a coarse
@@ -100,7 +121,9 @@ It can change nearly everything the editor can: paint terrain, place / move / re
 edit units, doodads and sprites, add / edit / remove locations, fog, the map's name and
 description, triggers (append, replace, remove, reorder, preserve), strings, switch names,
 the script (compile and build), player types / races / colours / forces, unit, upgrade and
-technology settings, the sound table, the map revision, and the map's size. Every tool
+technology settings, the sound table, the map revision, and the map's size. It reads the
+same genre guides Make Scenario uses (`guide`) and builds the same toolkit systems
+(`ums_build`), so "add kill to cash" is one call, not a page of hand-written triggers. Every tool
 call shows as a row in the transcript with its result on hover, screenshots inline; each
 edit is its own undo step, and a settings change is a transaction outside undo, as in
 StarEdit, marked so in the row. After a turn that changed the map the panel says what
@@ -116,6 +139,12 @@ message costs little more than the words you typed. Right-click on the map and c
 the chips above the input hold the usual questions. The picture tick sends a screenshot of
 the visible area with the message. It stops after the rounds of tool calls the Settings
 allow (24 by default) and offers to continue.
+
+**Inside the editor's own dialogs.** Map Properties gets *Suggest a name*, which fills the
+name and description fields from what is on the map (OK writes them, as always). The
+Trigger Editor, the Text Trigger Editor and Mission Briefing get *Explain*, *Write…* and
+*Ask*; the String Editor *Rewrite with AI…*; Player Settings *Set up with AI…*. They open
+the matching item, or the assistant with a message started.
 
 ## Costs
 
@@ -146,7 +175,12 @@ mode; `settings.ts` the dialog that shows them.
 - `layout.ts` — the Melee Wizard's base and symmetry geometry, vendored.
 - `render.ts` — a plan onto the map as one transaction.
 - `tools.ts`, `tools/` — the assistant's tools by subject (reads, terrain, objects,
-  triggers, settings, script); `assistant.ts` — its panel.
+  triggers, the toolkit and guides, settings, script); `assistant.ts` — its panel;
+  `intent.ts` — where a tool call lands on the map, for the outline and the flash.
+- `ums.ts` — the toolkit: the catalogue of trigger-system kinds the server designs against
+  and the builders that turn parameters into text triggers; `guides.ts` — the genre guides.
+- `slots.ts` — the buttons the plugin puts inside the editor's own dialogs.
 - `markdown.ts` — a small renderer for the model's prose.
-- `dialogs/` — one file per menu item.
+- `dialogs/` — one file per menu item; `dialogs/scenario.ts` is Make Scenario, the
+  design-then-build workflow.
 - `dist/plugin.js` — the bundle the editor loads; `npm run build` writes it, CI commits it

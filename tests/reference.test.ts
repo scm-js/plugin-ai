@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReference, type ReferenceParts } from "../reference";
-import { QUICK_PROMPTS, trimHistory } from "../assistant";
+import { chipsFor, pruneImages, QUICK_PROMPTS, trimHistory } from "../assistant";
 import type { AgentMessage } from "../protocol";
 
 const parts: ReferenceParts = {
@@ -50,11 +50,37 @@ describe("assistant history", () => {
       m.push({ role: "user", content: [{ type: "tool_result", toolUseId: `t${i}`, content: "ok" }] });
       m.push({ role: "assistant", content: [{ type: "text", text: `a${i}` }] });
     }
-    const t = trimHistory(m, 10);
-    expect(t.length).toBeLessThanOrEqual(10);
+    const t = trimHistory(m, 10, 8);
+    expect(t.length).toBeLessThanOrEqual(8);
     expect(t[0].role).toBe("user");
     expect(t[0].content[0].type).toBe("text");
     expect(trimHistory(m.slice(0, 4), 10)).toHaveLength(4);
+    // Under the limit nothing moves, so the server's cache of the conversation survives; over it a whole chunk goes at once.
+    const ten = m.slice(0, 10);
+    expect(trimHistory(ten, 10)).toBe(ten);
     expect(QUICK_PROMPTS.length).toBeGreaterThan(3);
+  });
+
+  it("keeps only the newest pictures when it trims", () => {
+    const img = { type: "image" as const, source: { mediaType: "image/png" as const, data: "AA" } };
+    const m: AgentMessage[] = [
+      { role: "user", content: [img, { type: "text", text: "look" }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "screenshot", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t1", content: [{ type: "text", text: "shot" }, img] }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "t2", name: "screenshot", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "t2", content: [img] }] },
+    ];
+    const pruned = pruneImages(m, 1);
+    expect(pruned[0].content[0]).toEqual({ type: "text", text: "(a picture that was here is no longer kept)" });
+    expect((pruned[2].content[0] as { content: unknown[] }).content[1]).toEqual({ type: "text", text: "(picture no longer kept)" });
+    expect((pruned[4].content[0] as { content: unknown[] }).content[0]).toEqual(img);
+    expect(pruned[4]).toBe(m[4]);
+    expect(pruneImages(m, 5)).toEqual(m);
+  });
+
+  it("offers chips for what the person is doing", () => {
+    expect(chipsFor("terrain", 0, 0).map((c) => c.label)).toEqual(["Describe", "Check", "Terrain", "Scenario"]);
+    expect(chipsFor("units", 3, 4).map((c) => c.label)).toEqual(["Describe", "Check", "Selection", "Balance", "Triggers"]);
+    expect(chipsFor("locations", 0, 1).map((c) => c.label)).toContain("Locations");
   });
 });

@@ -35,9 +35,11 @@ export interface Settings {
   maxRounds: number;
   /** Send a picture of the visible area with every assistant message. */
   attachView: boolean;
+  /** The assistant lives in the right dock (true) or floats over the map. */
+  dockAssistant: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false };
+export const DEFAULT_SETTINGS: Settings = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: true };
 
 const KEY = "settings";
 
@@ -110,6 +112,7 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
         { value: "max", label: "Maximum — slow, thorough, dear" },
       ], { value: s.effort, onChange: (v) => { s.effort = v as Effort | ""; } });
       const thinkingBox = w.checkbox("Show the model's reasoning summary while it works", { value: s.showThinking, onChange: (v) => { s.showThinking = v; } });
+      const dockBox = w.checkbox("Dock the assistant beside the map (off: a floating panel)", { value: s.dockAssistant, onChange: (v) => { s.dockAssistant = v; } });
       const roundsField = w.number({ value: s.maxRounds, min: 1, max: 100, step: 1, onChange: (v) => { s.maxRounds = Math.max(1, Math.min(100, Math.round(v || 24))); } });
       const attachBox = w.checkbox("Send a picture of the visible area with every message", { value: s.attachView, onChange: (v) => { s.attachView = v; } });
 
@@ -223,12 +226,13 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
             { label: "Effort", field: effortSelect },
           ]),
           thinkingBox,
-          h("div", { className: "ai-hint" }, "Effort trades thoroughness for time and cost. The features that lay out maps and write triggers default to high; the rest to low or medium."),
+          h("div", { className: "ai-hint" }, "Effort trades thoroughness for time and cost. The features that lay out maps and write triggers default to high; the rest to low or medium. Changing the model, the effort or the reasoning tick in the middle of an assistant conversation makes the server re-read the whole conversation once; the next message is a little dearer."),
         ),
         w.group("Assistant",
           w.form([{ label: "Rounds per message", field: roundsField }]),
           attachBox,
-          h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time."),
+          dockBox,
+          h("div", { className: "ai-hint" }, "A round is one answer from the model followed by the tool calls it asked for. The assistant stops at the limit and offers to continue. A picture costs about as much as a page of text each time. The dock setting applies the next time the assistant opens."),
         ),
       );
       void connect();

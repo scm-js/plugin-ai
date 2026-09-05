@@ -4,7 +4,7 @@
  * progress bar with a live elapsed counter, the reasoning summary when asked for, a
  * Stop button while a request is out, and the cost once it is back.
  */
-import type { PluginApi } from "@scm-js/plugin-api";
+import type { PluginApi, StatusItemHandle } from "@scm-js/plugin-api";
 import type { RecipeInputs, RecipeName, RecipeOptions, Usage } from "./protocol";
 import type { AccountManager } from "./account";
 import { AiClient, AiError, describeError, formatUsage, type Ledger, type RunHooks, type RunResult } from "./client";
@@ -17,6 +17,8 @@ export interface Ctx {
   ledger: Ledger;
   account: AccountManager;
   openSettings: () => void;
+  /** The plugin's status bar cell, when the host has one; the assistant reports its phase there. */
+  presence?: StatusItemHandle | null;
 }
 
 /* ── DOM ────────────────────────────────────────────────── */
@@ -108,6 +110,37 @@ export const STYLE = `
 .ai .ai-turn { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim, #99a2b3); padding: 3px 8px; border-top: 1px dashed var(--border, #333); }
 .ai .ai-turn .ai-grow { flex: 1; }
 .ai .ai-shot img { max-width: 100%; border: 1px solid var(--border, #333); border-radius: 3px; }
+.ai.ai-assistant { flex: 1; min-height: 0; }
+.ai.ai-assistant .ai-chat { flex: 1; min-height: 160px; max-height: none; }
+.ai .ai-state { display: flex; flex-direction: column; gap: 4px; padding: 5px 8px; border: 1px solid var(--border, #333); border-radius: 4px; background: var(--bg-1, #14171d); font-size: 11px; }
+.ai .ai-state-line { display: flex; align-items: center; gap: 8px; min-height: 16px; }
+.ai .ai-phase { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; color: var(--text-dim, #99a2b3); }
+.ai .ai-state.is-thinking .ai-phase, .ai .ai-state.is-waiting .ai-phase { color: var(--teal, #4fd1c5); }
+.ai .ai-state.is-writing .ai-phase { color: var(--text, #e6e9ef); }
+.ai .ai-state.is-tools .ai-phase { color: var(--gold, #e6b95c); }
+.ai .ai-state.is-failed .ai-phase { color: #ff9f7a; }
+.ai .ai-state.is-stopped .ai-phase { color: var(--text-faint, #6b7382); }
+.ai .ai-phase-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai .ai-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.ai .ai-pill { padding: 0 6px; border-radius: 8px; background: var(--bg-3, #232833); color: var(--text-dim, #99a2b3); font-size: 10px; white-space: nowrap; }
+.ai .ai-pill:empty { display: none; }
+.ai .ai-shimmer { height: 2px; border-radius: 1px; background: var(--bg-3, #232833); overflow: hidden; }
+.ai .ai-shimmer > i { display: block; height: 100%; width: 35%; background: linear-gradient(90deg, transparent, var(--teal, #4fd1c5), transparent); animation: ai-slide 1.6s ease-in-out infinite; }
+.ai .ai-state.is-tools .ai-shimmer > i { background: linear-gradient(90deg, transparent, var(--gold, #e6b95c), transparent); }
+.ai .ai-caret { display: inline-block; width: 6px; height: 12px; margin-left: 2px; vertical-align: -2px; background: var(--teal, #4fd1c5); animation: ai-blink 1s steps(2) infinite; }
+@keyframes ai-blink { to { opacity: 0; } }
+.ai .ai-tool.is-pending code { color: var(--text-dim, #99a2b3); }
+.ai .ai-tool-mark { flex: none; width: 12px; text-align: center; }
+.ai .ai-spin { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--text-faint, #6b7382); border-top-color: var(--teal, #4fd1c5); animation: ai-spin 0.8s linear infinite; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai .ai-steps { display: flex; flex-direction: column; gap: 3px; }
+.ai .ai-step { display: flex; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 3px; font-size: 11px; }
+.ai .ai-step .ai-step-mark { flex: none; width: 14px; text-align: center; }
+.ai .ai-step.is-running { background: var(--bg-3, #232833); }
+.ai .ai-step.is-done .ai-step-mark { color: var(--teal, #4fd1c5); }
+.ai .ai-step.is-failed .ai-step-mark { color: #ff9f7a; }
+.ai .ai-step.is-skipped { color: var(--text-faint, #6b7382); }
+.ai .ai-step .ai-grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
 
 let styleCount = 0;
