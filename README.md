@@ -1,5 +1,9 @@
 # AI
 
+> **Moved.** The AI features live in the [scmjs.dev plugin](https://github.com/scm-js/plugin-scmjs-dev)
+> now, together with the account and the map storage, as one plugin the editor ships with.
+> This repository is kept for its history and is not maintained.
+
 An experimental plugin for [scmJS](https://github.com/jeany55/scm-js), the browser-based
 StarCraft: Brood War map editor. It puts a language model to work on the open map: laying
 a map out from a description, redoing one area, writing and explaining triggers, naming
