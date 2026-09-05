@@ -1,7 +1,7 @@
 /**
  * The account behind the plugin's default access mode: a trial session the first time a
  * feature is used (no sign-in, a small balance), then sign-in through one of the server's
- * providers in a popup for a weekly allowance, and top-ups through the server's payment
+ * providers in a popup for a one-time credit (and a weekly allowance on a role that has one), and top-ups through the server's payment
  * page. Everything here is a thin layer over `AiClient`'s account calls plus the settings
  * that hold the session and the device id; the balance shown in the dialogs follows the
  * `remaining` every result carries.
@@ -201,9 +201,9 @@ export class AccountManager {
     const v = m ? m.state().account : this.view;
     if (m && !v) return m.state().kind === "guest" ? "scmjs.dev: first use starts a free trial, or sign in from the Account menu." : "scmjs.dev: balance unknown until the next call.";
     if (!v) return this.store.get().session ? "Account: balance unknown until the next call." : "First use starts a free trial.";
-    if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in for a weekly allowance.`;
+    if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in to keep it and get more.`;
     const resets = v.resetsAt ? ` · refills ${shortDay(v.resetsAt)}` : "";
-    const credit = v.creditUsd > 0 ? ` (${formatUsd(v.creditUsd)} of it purchased credit)` : "";
+    const credit = v.creditUsd > 0 && v.weeklyUsd > 0 ? ` (${formatUsd(v.creditUsd)} of it credit)` : "";
     return `${v.name ? `${v.name}: ` : ""}${formatUsd(v.balanceUsd)} left${credit}${resets}`;
   }
 }

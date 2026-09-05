@@ -2,14 +2,14 @@
  * The plugin's settings — where the server is, how the caller identifies itself, and
  * which model and effort to ask for — persisted through `api.storage`, plus the
  * Settings dialog. Three ways in: a *scmjs.dev account* (the default: a free trial with
- * no sign-in, then sign in with Discord for a weekly allowance, top up when needed), an
+ * no sign-in, then sign in with Discord for a one-time credit, top up when needed), an
  * *access token* from whoever runs a server, or *your own Anthropic key*. The session,
  * the token and the key are all kept in the browser's storage like the rest; the dialog
  * says so next to the fields.
  */
 import type { PluginApi } from "@scm-js/plugin-api";
 import type { InfoResponse } from "./protocol";
-import { AiClient, describeError, formatUsd, type AccessMode } from "./client";
+import { AiClient, describeError, formatUsd, signInGives, type AccessMode } from "./client";
 import { append, clear, h, styled, type Ctx } from "./ui";
 
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
@@ -42,6 +42,11 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: false };
 
 const KEY = "settings";
+
+/** "Discord", "Discord or Google", "Discord, Google or Battle.net". */
+function listOr(names: string[]): string {
+  return names.length < 3 ? names.join(" or ") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
 
 function newDeviceId(): string {
   const c = globalThis.crypto;
@@ -192,7 +197,7 @@ export function openSettings(ctx: Ctx, store: SettingsStore) {
           line,
           h("div", { className: "ai-btns" }, ...buttons),
           h("div", { className: "ai-hint" }, offers
-            ? `A free trial of ${formatUsd(offers.trialUsd)} needs no sign-in. Signing in${offers.providers.length ? ` with ${offers.providers.map((p) => p.name).join(" or ")}` : ""} gives ${formatUsd(offers.weeklyUsd)} a week, refilled every Monday${offers.packs.length ? ", and credit can be bought at cost when that runs out" : ""}. The server keeps your provider id, display name and a ledger of what your calls cost, nothing else; the account page can delete all of it.`
+            ? `${offers.trial ? `A free trial of ${formatUsd(offers.trialUsd)} needs no sign-in. ` : ""}Signing in${offers.providers.length ? ` with ${listOr(offers.providers.map((p) => p.name))}` : ""} ${signInGives(offers)}${offers.packs.length ? ", and credit can be bought at cost when that runs out" : ""}. The server keeps your provider id, display name and a ledger of what your calls cost, nothing else; the account page can delete all of it.`
             : "The server has not answered yet."),
         ]);
       };

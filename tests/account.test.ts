@@ -38,7 +38,7 @@ describe("account manager", () => {
 
   it("turns a refused trial into a budget error that points at signing in, and is inert in the other modes", async () => {
     const st = store();
-    const client = new AiClient(() => ({ serverUrl: st.s.serverUrl, access: st.s.access, session: st.s.session, token: "", ownKey: "" }), async () => json({ error: { code: "forbidden", message: "This browser has had its free trial. Sign in to get a weekly allowance." } }, 403));
+    const client = new AiClient(() => ({ serverUrl: st.s.serverUrl, access: st.s.access, session: st.s.session, token: "", ownKey: "" }), async () => json({ error: { code: "forbidden", message: "This browser has had its free trial. Sign in to keep a balance." } }, 403));
     new AccountManager(st, client);
     await expect(client.run("explain-triggers", { text: "t" })).rejects.toMatchObject({ code: "budget_exceeded", message: /Sign in/ });
     expect(st.s.session).toBe("");

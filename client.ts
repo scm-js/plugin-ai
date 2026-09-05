@@ -148,6 +148,12 @@ export function formatUsd(v: number): string {
   return `$${v.toFixed(2)}`;
 }
 
+/** What a sign-in gets, worded from the server's offer: a one-time credit, a weekly allowance, both or neither. */
+export function signInGives(offers: { signupUsd: number; weeklyUsd: number }): string {
+  const gets = [offers.signupUsd > 0 ? `${formatUsd(offers.signupUsd)} of credit to start` : "", offers.weeklyUsd > 0 ? `${formatUsd(offers.weeklyUsd)} a week, refilled every Monday` : ""].filter(Boolean);
+  return gets.length ? `gives ${gets.join(" and ")}` : "keeps your balance across browsers";
+}
+
 export function formatTokens(n: number): string {
   return n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
 }

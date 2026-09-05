@@ -24,7 +24,7 @@ https://github.com/scm-js/plugin-ai
 
 into Plugins ▸ Manage Plugins… and press Add. That is all: the first feature you use
 starts the free trial. Tools ▸ AI ▸ Settings… shows what is left, has the *Sign in with
-Discord* button for the weekly allowance, a *Top up* for credit packs, and an *Account
+Discord* button for the sign-in credit, a *Top up* for credit packs, and an *Account
 page* link for the ledger, linking another sign-in, and deleting the account (everything
 the server keeps about you goes with it: your Discord id, display name, and the ledger).
 
@@ -160,8 +160,8 @@ Every dialog shows the model, how long it has been waiting, and once the answer 
 what it cost, what the session has cost so far, and what is left on the account. Roughly,
 at the server's default model: a map plan is a few tens of cents, a trigger script and a
 review about the same, a name or a translation a few cents. On `api.scmjs.dev` the trial
-and the weekly allowance are what the server says in Settings; credit bought on top is
-charged at the model's price, does not expire, and is spent after the week's allowance.
+and the sign-in credit are what the server says in Settings; credit bought on top is
+charged at the model's price, does not expire, and is spent after any weekly allowance.
 When the balance is empty the dialog says so and links to Settings — sign in if you were
 on the trial, top up or wait for Monday if you were not.
 

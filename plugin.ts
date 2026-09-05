@@ -8,7 +8,7 @@
  * prompts; this plugin gathers what the model needs from the open map, applies what
  * comes back through the editor's own transactions, and never sends anything until
  * you press the button. Out of the box it talks to api.scmjs.dev: a free trial with no
- * sign-in, then a weekly allowance behind a Discord sign-in (`account.ts`); a token or
+ * sign-in, then a one-time credit behind a Discord sign-in (`account.ts`); a token or
  * your own Anthropic key are the other two ways in.
  *
  * `protocol.ts` is the wire contract shared with the server; `plan.ts` / `grid.ts`
