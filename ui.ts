@@ -93,6 +93,8 @@ export const STYLE = `
 .ai .ai-legend i { display: inline-block; width: 10px; height: 10px; vertical-align: -1px; margin-right: 4px; border: 1px solid rgba(255,255,255,.15); }
 .ai .ai-btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .ai .ai-hint { color: var(--text-faint, #6b7382); font-size: 11px; line-height: 1.4; }
+.ai .check { white-space: normal; height: auto; align-items: flex-start; line-height: 1.35; }
+.ai .check input { margin-top: 3px; flex: none; }
 .ai table.ai-table { border-collapse: collapse; width: 100%; font-size: 11px; }
 .ai table.ai-table th, .ai table.ai-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--border, #333); vertical-align: top; }
 .ai table.ai-table td.ai-mono { font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
