@@ -105,7 +105,8 @@ the strings in use, or only the trigger text, the briefing, or the names, and sh
 before-and-after table with a tick per row. Apply writes the ticked rows back in place,
 never renumbering, so triggers keep pointing at the same strings.
 
-**Assistant** (Ctrl+Shift+A) is a panel docked beside the map (or floating, by Settings).
+**Assistant** (Ctrl+Shift+A) is a panel floating over the map (Settings can put it in the
+right dock instead, under the Properties panel).
 Say what you want to know or change; the model reads the map through tools and changes
 it through others. While it works a strip at the top says what is happening — waiting,
 thinking, writing, working on the map — with the seconds and the cost; its words stream in

@@ -1,6 +1,6 @@
 /**
- * The AI Assistant: a conversation about the open map, in a panel docked beside it (or
- * floating, by Settings). A message goes to the server's `agent` recipe with the tools in
+ * The AI Assistant: a conversation about the open map, in a panel floating over it (or
+ * docked at the right, by Settings). A message goes to the server's `agent` recipe with the tools in
  * `tools.ts`, the map's facts (what is selected, where the view is) and the per-map
  * reference block; every tool call the model makes runs here, all of a turn's calls
  * answered together, and the loop continues while the model keeps calling tools, up to

@@ -6205,7 +6205,7 @@ function installDialogSlots(ctx, actions) {
 
 // settings.ts
 var DEFAULT_SERVER_URL = "https://api.scmjs.dev";
-var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: true };
+var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: false };
 var KEY = "settings";
 function newDeviceId() {
   const c2 = globalThis.crypto;
@@ -6282,7 +6282,7 @@ function openSettings(ctx, store) {
       const thinkingBox = w.checkbox("Show the model's reasoning summary while it works", { value: s.showThinking, onChange: (v) => {
         s.showThinking = v;
       } });
-      const dockBox = w.checkbox("Dock the assistant beside the map (off: a floating panel)", { value: s.dockAssistant, onChange: (v) => {
+      const dockBox = w.checkbox("Put the assistant in the right dock, under the Properties panel (off: a floating panel over the map)", { value: s.dockAssistant, onChange: (v) => {
         s.dockAssistant = v;
       } });
       const roundsField = w.number({ value: s.maxRounds, min: 1, max: 100, step: 1, onChange: (v) => {
