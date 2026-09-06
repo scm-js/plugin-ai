@@ -102,6 +102,10 @@ function formatUsd(v) {
   if (v < 5e-3) return v === 0 ? "$0.00" : "<$0.01";
   return `$${v.toFixed(2)}`;
 }
+function signInGives(offers) {
+  const gets = [offers.signupUsd > 0 ? `${formatUsd(offers.signupUsd)} of credit to start` : "", offers.weeklyUsd > 0 ? `${formatUsd(offers.weeklyUsd)} a week, refilled every Monday` : ""].filter(Boolean);
+  return gets.length ? `gives ${gets.join(" and ")}` : "keeps your balance across browsers";
+}
 function formatTokens(n2) {
   return n2 >= 1e3 ? `${(n2 / 1e3).toFixed(n2 >= 1e4 ? 0 : 1)}k` : String(n2);
 }
@@ -524,9 +528,9 @@ var AccountManager = class {
     const v = m ? m.state().account : this.view;
     if (m && !v) return m.state().kind === "guest" ? "scmjs.dev: first use starts a free trial, or sign in from the Account menu." : "scmjs.dev: balance unknown until the next call.";
     if (!v) return this.store.get().session ? "Account: balance unknown until the next call." : "First use starts a free trial.";
-    if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in for a weekly allowance.`;
+    if (v.kind === "trial") return `Free trial: ${formatUsd(v.balanceUsd)} left. Sign in to keep it and get more.`;
     const resets = v.resetsAt ? ` \xB7 refills ${shortDay(v.resetsAt)}` : "";
-    const credit = v.creditUsd > 0 ? ` (${formatUsd(v.creditUsd)} of it purchased credit)` : "";
+    const credit = v.creditUsd > 0 && v.weeklyUsd > 0 ? ` (${formatUsd(v.creditUsd)} of it credit)` : "";
     return `${v.name ? `${v.name}: ` : ""}${formatUsd(v.balanceUsd)} left${credit}${resets}`;
   }
 };
@@ -6261,6 +6265,9 @@ var SCMJS_ACCOUNT_SERVICE = "scmjs-dev.account";
 var DEFAULT_SERVER_URL = "https://api.scmjs.dev";
 var DEFAULT_SETTINGS = { serverUrl: DEFAULT_SERVER_URL, access: "account", session: "", deviceId: "", token: "", ownKey: "", model: "", effort: "", showThinking: true, maxRounds: 24, attachView: false, dockAssistant: false };
 var KEY = "settings";
+function listOr(names) {
+  return names.length < 3 ? names.join(" or ") : `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
 function newDeviceId() {
   const c2 = globalThis.crypto;
   if (c2?.randomUUID) return c2.randomUUID().replace(/-/g, "");
@@ -6448,7 +6455,7 @@ function openSettings(ctx, store) {
         append(accountBox, [
           line,
           h("div", { className: "ai-btns" }, ...buttons),
-          h("div", { className: "ai-hint" }, offers ? `A free trial of ${formatUsd(offers.trialUsd)} needs no sign-in. Signing in${offers.providers.length ? ` with ${offers.providers.map((p) => p.name).join(" or ")}` : ""} gives ${formatUsd(offers.weeklyUsd)} a week, refilled every Monday${offers.packs.length ? ", and credit can be bought at cost when that runs out" : ""}. The server keeps your provider id, display name and a ledger of what your calls cost, nothing else; the account page can delete all of it.` : "The server has not answered yet.")
+          h("div", { className: "ai-hint" }, offers ? `${offers.trial ? `A free trial of ${formatUsd(offers.trialUsd)} needs no sign-in. ` : ""}Signing in${offers.providers.length ? ` with ${listOr(offers.providers.map((p) => p.name))}` : ""} ${signInGives(offers)}${offers.packs.length ? ", and credit can be bought at cost when that runs out" : ""}. The server keeps your provider id, display name and a ledger of what your calls cost, nothing else; the account page can delete all of it.` : "The server has not answered yet.")
         ]);
       };
       const offAccount = account.onChange(renderAccount);
