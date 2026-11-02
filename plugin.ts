@@ -1,5 +1,5 @@
 /**
- * AI — a plugin for the scmJS map editor (https://github.com/jeany55/scm-js).
+ * AI — a plugin for the scmJS map editor (https://github.com/scm-js/scm-js).
  *
  * Experimental tools that use a language model through an ai-server
  * (https://github.com/scm-js/ai-server): a map laid out from a prompt, an area redone,
